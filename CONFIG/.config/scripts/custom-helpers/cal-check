@@ -1,0 +1,89 @@
+#!/bin/bash
+# cal-check: Today's and Tomorrow's Google Calendar events
+sleep 2 # Wait for X and Wi-Fi
+
+# Load environment variables from zshrc (allows sharing script without private links)
+[ -f "$HOME/.zshrc" ] && source "$HOME/.zshrc"
+
+# Convert the multi-line string from zshrc into an array
+ICAL_URLS=($(echo $MY_CAL_URLS))
+
+# Safety check: Exit if the variable is empty
+if [ ${#ICAL_URLS[@]} -eq 0 ]; then
+  notify-send "Calendar Error" "MY_CAL_URLS is empty. Check your .zshrc"
+  exit 1
+fi
+
+TEMP_DIR="/tmp/cal-sync"
+mkdir -p "$TEMP_DIR"
+
+# Date variables
+TODAY=$(date +%Y%m%d)
+TOMORROW=$(date -d "tomorrow" +%Y%m%d)
+
+TODAY_LIST=()
+TOMORROW_LIST=()
+
+export LC_ALL=en_US.UTF-8
+
+for URL in "${ICAL_URLS[@]}"; do
+  TEMP_FILE="$TEMP_DIR/$(basename "$URL")"
+  curl -s --fail "$URL" -o "$TEMP_FILE" || continue
+
+  # Join continuation lines (lines starting with space)
+  ICS_CONTENT=$(sed -e ':a' -e 'N' -e '$!ba' -e 's/\n[ \t]/ /g' "$TEMP_FILE")
+
+  CURRENT_TIME=""
+  CURRENT_DATE=""
+
+  while IFS= read -r line; do
+    if [[ "$line" =~ ^DTSTART ]]; then
+      DATEPART="${line#*:}"
+      DATEONLY="${DATEPART:0:8}"
+      CURRENT_DATE="$DATEONLY"
+
+      # Timed event only if DTSTART has time part
+      if [[ "$line" != *"VALUE=DATE"* && ${#DATEPART} -ge 13 ]]; then
+        if [[ "$DATEPART" =~ Z$ ]]; then
+          HH="${DATEPART:9:2}"
+          MM="${DATEPART:11:2}"
+          CURRENT_TIME=$(date -d "$HH:$MM UTC" +%H:%M)
+        else
+          HH="${DATEPART:9:2}"
+          MM="${DATEPART:11:2}"
+          CURRENT_TIME="$HH:$MM"
+        fi
+      else
+        CURRENT_TIME="All Day"
+      fi
+
+    elif [[ "$line" =~ ^SUMMARY: ]]; then
+      EVENT_SUMMARY="${line#SUMMARY:}"
+
+      # Check if event belongs to Today
+      if [[ "$CURRENT_DATE" == "$TODAY" && -n "$EVENT_SUMMARY" ]]; then
+        TODAY_LIST+=("$CURRENT_TIME - $EVENT_SUMMARY")
+
+      # Check if event belongs to Tomorrow
+      elif [[ "$CURRENT_DATE" == "$TOMORROW" && -n "$EVENT_SUMMARY" ]]; then
+        TOMORROW_LIST+=("$CURRENT_TIME - $EVENT_SUMMARY")
+      fi
+    fi
+  done <<<"$ICS_CONTENT"
+
+  rm -f "$TEMP_FILE"
+done
+
+rmdir "$TEMP_DIR" 2>/dev/null
+
+# Notification 1: Today
+if [ ${#TODAY_LIST[@]} -gt 0 ]; then
+  TODAY_MSG=$(printf "%s\n" "${TODAY_LIST[@]}")
+  notify-send -t 30000 "📅 Today's Schedule" "$TODAY_MSG"
+fi
+
+# Notification 2: Tomorrow
+if [ ${#TOMORROW_LIST[@]} -gt 0 ]; then
+  TOMORROW_MSG=$(printf "%s\n" "${TOMORROW_LIST[@]}")
+  notify-send -t 30000 "⏳ Tomorrow's Schedule" "$TOMORROW_MSG"
+fi

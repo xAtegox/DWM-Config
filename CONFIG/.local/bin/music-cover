@@ -1,0 +1,2158 @@
+#!/usr/bin/env python3
+
+import os
+import re
+import subprocess
+import tempfile
+
+import gi
+
+gi.require_version("Gtk", "3.0")
+gi.require_version("Gdk", "3.0")
+gi.require_version("GdkPixbuf", "2.0")
+
+from gi.repository import Gtk, Gdk, GdkPixbuf, GLib, Pango
+
+
+# ============================================================
+# CONFIG
+# ============================================================
+
+MUSIC_DIR = os.path.expanduser("~/Music")
+WAL_COLORS = os.path.expanduser("~/.cache/wal/colors")
+XRESOURCES = os.path.expanduser("~/.Xresources")
+
+WINDOW_SIZE = 420
+WINDOW_MARGIN = 20
+
+# Don't hammer mpc/playerctl.
+UPDATE_INTERVAL = 250
+
+AUDIO_EXTENSIONS = {
+    ".mp3",
+    ".flac",
+    ".ogg",
+    ".oga",
+    ".opus",
+    ".m4a",
+    ".aac",
+    ".wav",
+    ".ape",
+    ".wv",
+}
+
+
+# ============================================================
+# HELPERS
+# ============================================================
+
+
+def run(cmd):
+    try:
+        return subprocess.check_output(
+            cmd,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        ).strip()
+    except Exception:
+        return ""
+
+
+def command_exists(cmd):
+    try:
+        return subprocess.call(["sh", "-c", f"command -v {cmd} >/dev/null 2>&1"]) == 0
+    except Exception:
+        return False
+
+
+def command(cmd):
+    try:
+        subprocess.Popen(
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except Exception:
+        pass
+
+
+def command_output(cmd):
+    try:
+        return subprocess.check_output(
+            cmd,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+    except Exception:
+        return ""
+
+
+def clamp(value, minimum, maximum):
+    return max(minimum, min(maximum, value))
+
+
+def format_time(seconds):
+    try:
+        seconds = max(0, int(float(seconds)))
+    except Exception:
+        return "0:00"
+
+    minutes = seconds // 60
+    seconds %= 60
+
+    return f"{minutes}:{seconds:02d}"
+
+
+# ============================================================
+# PYWAL / XRESOURCES
+# ============================================================
+
+
+def get_xresources_background():
+    """
+    Read the actual Xresources background.
+
+    This is deliberately preferred over colors[0], because
+    .Xresources may contain the final background that terminals
+    actually use.
+    """
+
+    # xrdb gives us the merged X resources and therefore also
+    # handles resources inherited from ~/.Xresources.
+    if command_exists("xrdb"):
+        output = run(["xrdb", "-query"])
+
+        for line in output.splitlines():
+            if not line.strip():
+                continue
+
+            if line.startswith("*background:"):
+                value = line.split(":", 1)[1].strip()
+
+                if value.startswith("#"):
+                    return value
+
+            if line.startswith("*URxvt*background:"):
+                value = line.split(":", 1)[1].strip()
+
+                # pywal can put [100] before the colour.
+                value = re.sub(r"^\[[0-9]+\]", "", value)
+
+                if value.startswith("#"):
+                    return value
+
+    # Direct fallback.
+    try:
+        with open(XRESOURCES, "r", encoding="utf-8") as f:
+            for line in f:
+                stripped = line.strip()
+
+                if stripped.startswith("!"):
+                    continue
+
+                match = re.match(
+                    r"^\*background\s*:\s*(?:\[[0-9]+\])?(#[0-9a-fA-F]{6})",
+                    stripped,
+                )
+
+                if match:
+                    return match.group(1)
+
+    except Exception:
+        pass
+
+    return None
+
+
+def get_wal_colors():
+
+    colors = []
+
+    try:
+        with open(WAL_COLORS, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+
+                if re.fullmatch(r"#[0-9a-fA-F]{6}", line):
+                    colors.append(line)
+
+    except Exception:
+        pass
+
+    # Your .Xresources background takes priority.
+    xbg = get_xresources_background()
+
+    if len(colors) >= 16:
+        background = xbg or colors[0]
+
+        return {
+            "background": background,
+            "foreground": colors[7],
+            "color0": colors[0],
+            "color1": colors[1],
+            "color2": colors[2],
+            "color3": colors[3],
+            "color4": colors[4],
+            "color5": colors[5],
+            "color6": colors[6],
+            "color7": colors[7],
+            "color8": colors[8],
+            "color9": colors[9],
+            "color10": colors[10],
+            "color11": colors[11],
+            "color12": colors[12],
+            "color13": colors[13],
+            "color14": colors[14],
+            "color15": colors[15],
+        }
+
+    # Fallback matching your current wal palette.
+    background = xbg or "#414545"
+
+    return {
+        "background": background,
+        "foreground": "#dddddd",
+        "color0": "#414545",
+        "color1": "#6a8ec1",
+        "color2": "#81a0cc",
+        "color3": "#8eb5ea",
+        "color4": "#8fb5ed",
+        "color5": "#98beee",
+        "color6": "#9bbff1",
+        "color7": "#dddddd",
+        "color8": "#708e8e",
+        "color9": "#6a8ec1",
+        "color10": "#81a0cc",
+        "color11": "#8eb5ea",
+        "color12": "#8fb5ed",
+        "color13": "#98beee",
+        "color14": "#9bbff1",
+        "color15": "#dddddd",
+    }
+
+
+def apply_theme():
+
+    c = get_wal_colors()
+
+    css = f"""
+    * {{
+        background-image: none;
+    }}
+
+    window {{
+        background-color: {c["background"]};
+        color: {c["foreground"]};
+    }}
+
+    #main {{
+        background-color: {c["background"]};
+        color: {c["foreground"]};
+    }}
+
+    #header {{
+        color: {c["foreground"]};
+        font-size: 17px;
+        font-weight: bold;
+        background-color: {c["background"]};
+    }}
+
+    #song {{
+        color: {c["foreground"]};
+        font-size: 14px;
+        background-color: {c["background"]};
+    }}
+
+    #normal {{
+        color: {c["foreground"]};
+        font-size: 12px;
+        background-color: {c["background"]};
+    }}
+
+    #playlist {{
+        background-color: {c["background"]};
+        color: {c["foreground"]};
+        border: none;
+    }}
+
+    #playlist-row {{
+        background-color: {c["background"]};
+        color: {c["foreground"]};
+        padding: 2px 4px;
+        min-height: 20px;
+        border: none;
+    }}
+
+    #playlist-row:selected {{
+        background-color: {c["color8"]};
+        color: {c["foreground"]};
+    }}
+
+    #selected-row {{
+        background-color: {c["color8"]};
+        color: {c["foreground"]};
+        padding: 2px 4px;
+        min-height: 20px;
+        border: none;
+    }}
+
+    #playlist-label {{
+        color: {c["foreground"]};
+        font-size: 12px;
+        background-color: transparent;
+    }}
+
+    #selected-label {{
+        color: {c["foreground"]};
+        font-size: 12px;
+        font-weight: bold;
+        background-color: transparent;
+    }}
+
+    scrollbar {{
+        background-color: {c["background"]};
+    }}
+
+    scrollbar trough {{
+        background-color: {c["background"]};
+        border: none;
+    }}
+
+    scrollbar slider {{
+        background-color: {c["color8"]};
+        min-width: 6px;
+        min-height: 6px;
+        border-radius: 3px;
+    }}
+
+    progressbar {{
+        min-height: 3px;
+        background-color: {c["background"]};
+    }}
+
+    progressbar trough {{
+        background-color: {c["color8"]};
+        min-height: 3px;
+        border: none;
+    }}
+
+    progressbar progress {{
+        background-color: {c["color2"]};
+        min-height: 3px;
+        border: none;
+    }}
+
+    scale {{
+        background-color: {c["background"]};
+    }}
+
+    scale trough {{
+        min-height: 3px;
+        background-color: {c["color8"]};
+        border: none;
+    }}
+
+    scale highlight {{
+        min-height: 3px;
+        background-color: {c["color2"]};
+    }}
+
+    scale slider {{
+        min-width: 8px;
+        min-height: 8px;
+        background-color: {c["foreground"]};
+        border: none;
+    }}
+
+    scrolledwindow {{
+        background-color: {c["background"]};
+        border: none;
+    }}
+
+    viewport {{
+        background-color: {c["background"]};
+    }}
+    """
+
+    provider = Gtk.CssProvider()
+
+    try:
+        provider.load_from_data(css.encode())
+    except Exception:
+        return
+
+    screen = Gdk.Screen.get_default()
+
+    if screen:
+        Gtk.StyleContext.add_provider_for_screen(
+            screen,
+            provider,
+            Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION,
+        )
+
+
+# ============================================================
+# MPD
+# ============================================================
+
+
+def mpd_status():
+
+    if not command_exists("mpc"):
+        return None
+
+    status = run(["mpc", "status"])
+
+    if not status:
+        return None
+
+    lines = status.splitlines()
+
+    state = None
+    status_line = ""
+
+    for line in lines:
+        if "[playing]" in line:
+            state = "playing"
+            status_line = line
+            break
+
+        if "[paused]" in line:
+            state = "paused"
+            status_line = line
+            break
+
+    if state is None:
+        return None
+
+    # --------------------------------------------------------
+    # Progress
+    # --------------------------------------------------------
+
+    progress = 0.0
+    elapsed = 0.0
+    duration = 0.0
+
+    match = re.search(
+        r"(\d+):(\d+)\s*/\s*(\d+):(\d+)",
+        status_line,
+    )
+
+    if match:
+        elapsed = int(match.group(1)) * 60 + int(match.group(2))
+        duration = int(match.group(3)) * 60 + int(match.group(4))
+
+        if duration > 0:
+            progress = elapsed / duration
+
+    else:
+        match = re.search(r"\((\d+)%\)", status_line)
+
+        if match:
+            progress = int(match.group(1)) / 100.0
+
+    # --------------------------------------------------------
+    # Song
+    # --------------------------------------------------------
+
+    title = run(
+        [
+            "mpc",
+            "-f",
+            "%title%",
+            "current",
+        ]
+    )
+
+    filepath = run(
+        [
+            "mpc",
+            "-f",
+            "%file%",
+            "current",
+        ]
+    )
+
+    if filepath:
+        filepath = os.path.join(MUSIC_DIR, filepath)
+
+    # --------------------------------------------------------
+    # Volume
+    # --------------------------------------------------------
+
+    volume = 0
+
+    volume_match = re.search(
+        r"volume:\s*(\d+)%",
+        status_line,
+        re.IGNORECASE,
+    )
+
+    if volume_match:
+        volume = int(volume_match.group(1))
+    else:
+        volume_output = run(["mpc", "volume"])
+
+        volume_match = re.search(
+            r"(\d+)%",
+            volume_output,
+        )
+
+        if volume_match:
+            volume = int(volume_match.group(1))
+
+    return {
+        "player": "mpd",
+        "state": state,
+        "title": title or "Unknown",
+        "progress": clamp(progress, 0.0, 1.0),
+        "elapsed": elapsed,
+        "duration": duration,
+        "volume": clamp(volume, 0, 100),
+        "file": filepath,
+    }
+
+
+def get_current_player():
+
+    info = mpd_status()
+
+    if info:
+        return info
+
+    return {
+        "player": None,
+        "state": "stopped",
+        "title": "Nothing playing",
+        "progress": 0.0,
+        "elapsed": 0.0,
+        "duration": 0.0,
+        "volume": 0,
+        "file": None,
+    }
+
+
+# ============================================================
+# PLAYER CONTROLS
+# ============================================================
+
+
+def player_command(action):
+
+    if not command_exists("mpc"):
+        return
+
+    commands = {
+        "play": ["mpc", "play"],
+        "pause": ["mpc", "pause"],
+        "stop": ["mpc", "stop"],
+        "next": ["mpc", "next"],
+        "previous": ["mpc", "prev"],
+        "volume_up": ["mpc", "volume", "+5"],
+        "volume_down": ["mpc", "volume", "-5"],
+    }
+
+    if action in commands:
+        command(commands[action])
+
+
+# ============================================================
+# COVER HANDLING
+# ============================================================
+
+
+def image_file(path):
+
+    if not path:
+        return False
+
+    extension = os.path.splitext(path)[1].lower()
+
+    return extension in {
+        ".jpg",
+        ".jpeg",
+        ".png",
+        ".webp",
+        ".bmp",
+        ".gif",
+        ".tif",
+        ".tiff",
+        ".avif",
+    }
+
+
+def find_external_cover(filepath):
+
+    if not filepath:
+        return None
+
+    directory = os.path.dirname(filepath)
+
+    if not directory or not os.path.isdir(directory):
+        return None
+
+    names = [
+        "cover.jpg",
+        "cover.jpeg",
+        "cover.png",
+        "cover.webp",
+        "cover.bmp",
+        "cover.gif",
+        "Cover.jpg",
+        "Cover.jpeg",
+        "Cover.png",
+        "Cover.webp",
+        "Cover.bmp",
+        "Cover.gif",
+        "folder.jpg",
+        "folder.jpeg",
+        "folder.png",
+        "folder.webp",
+        "front.jpg",
+        "front.jpeg",
+        "front.png",
+        "front.webp",
+        "album.jpg",
+        "album.jpeg",
+        "album.png",
+        "album.webp",
+        "albumart.jpg",
+        "albumart.jpeg",
+        "albumart.png",
+        "albumart.webp",
+    ]
+
+    for name in names:
+        path = os.path.join(directory, name)
+
+        if os.path.isfile(path):
+            return path
+
+    # Last resort: find any image.
+    try:
+        for name in os.listdir(directory):
+            if name.startswith("."):
+                continue
+
+            path = os.path.join(directory, name)
+
+            if os.path.isfile(path) and image_file(path):
+                return path
+
+    except Exception:
+        pass
+
+    return None
+
+
+def extract_embedded_cover(filepath):
+    """
+    Extract embedded artwork from audio into /tmp.
+
+    This handles the exact case shown by ffprobe:
+
+        Stream #0:1: Video: mjpeg ... (attached pic)
+
+    No permanent file is created in ~/Music.
+    """
+
+    if not filepath or not os.path.isfile(filepath):
+        return None
+
+    if not command_exists("ffmpeg"):
+        return None
+
+    # A unique temporary file.
+    fd, output = tempfile.mkstemp(
+        prefix="music-cover-",
+        suffix=".jpg",
+    )
+
+    os.close(fd)
+
+    # ffmpeg wants to overwrite the output itself.
+    try:
+        result = subprocess.run(
+            [
+                "ffmpeg",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-y",
+                "-i",
+                filepath,
+                "-map",
+                "0:v:0",
+                "-frames:v",
+                "1",
+                "-q:v",
+                "2",
+                output,
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=8,
+        )
+
+        if result.returncode == 0 and os.path.isfile(output):
+            try:
+                if os.path.getsize(output) > 0:
+                    return output
+            except Exception:
+                pass
+
+    except Exception:
+        pass
+
+    try:
+        os.unlink(output)
+    except Exception:
+        pass
+
+    return None
+
+
+def find_cover(filepath):
+
+    if not filepath:
+        return None
+
+    # QMMP is gone, but this also handles an image path if one
+    # somehow gets passed in.
+    if filepath.startswith("file://"):
+        filepath = filepath[7:]
+
+    # 1. External cover.
+    external = find_external_cover(filepath)
+
+    if external:
+        return external
+
+    # 2. Embedded cover.
+    return extract_embedded_cover(filepath)
+
+
+# ============================================================
+# FILE HELPERS
+# ============================================================
+
+
+def is_audio(path):
+
+    return (
+        os.path.isfile(path) and os.path.splitext(path)[1].lower() in AUDIO_EXTENSIONS
+    )
+
+
+def directory_entries(path):
+
+    try:
+        entries = []
+
+        for name in os.listdir(path):
+            if name.startswith("."):
+                continue
+
+            full_path = os.path.join(path, name)
+
+            if os.path.isdir(full_path):
+                entries.append((name, full_path, True))
+
+            elif is_audio(full_path):
+                entries.append((name, full_path, False))
+
+        entries.sort(
+            key=lambda item: (
+                not item[2],
+                item[0].lower(),
+            )
+        )
+
+        return entries
+
+    except Exception:
+        return []
+
+
+# ============================================================
+# MAIN WINDOW
+# ============================================================
+
+
+class MusicWindow(Gtk.Window):
+    def __init__(self):
+
+        super().__init__(title="Music")
+
+        # ----------------------------------------------------
+        # WINDOW
+        # ----------------------------------------------------
+
+        self.set_default_size(
+            WINDOW_SIZE,
+            WINDOW_SIZE,
+        )
+
+        self.set_size_request(250, 250)
+
+        self.set_resizable(True)
+
+        self.set_decorated(False)
+
+        self.set_keep_above(True)
+
+        self.connect(
+            "key-press-event",
+            self.on_key_press,
+        )
+
+        self.connect(
+            "destroy",
+            Gtk.main_quit,
+        )
+
+        # ----------------------------------------------------
+        # STATE
+        # ----------------------------------------------------
+
+        self.page = 0
+
+        self.last_song = None
+        self.last_cover_path = None
+        self.cover_pixbuf = None
+
+        self.last_wal_mtime = None
+        self.last_xresources_mtime = None
+
+        self.playlist = []
+        self.playlist_index = 0
+
+        self.browser_path = MUSIC_DIR
+        self.browser_entries = []
+        self.browser_index = 0
+
+        self.user_moving_slider = False
+
+        # ----------------------------------------------------
+        # STACK
+        # ----------------------------------------------------
+
+        self.stack = Gtk.Stack()
+
+        self.stack.set_transition_type(Gtk.StackTransitionType.NONE)
+
+        self.stack.set_homogeneous(True)
+
+        self.add(self.stack)
+
+        # ----------------------------------------------------
+        # PAGES
+        # ----------------------------------------------------
+
+        self.create_cover_page()
+        self.create_playlist_page()
+        self.create_browser_page()
+
+        # ----------------------------------------------------
+        # THEME
+        # ----------------------------------------------------
+
+        apply_theme()
+
+        # ----------------------------------------------------
+        # SHOW FIRST
+        # ----------------------------------------------------
+
+        self.show_all()
+
+        self.stack.set_visible_child_name("cover")
+
+        # IMPORTANT:
+        # GTK first creates/shows the window normally.
+        # Only afterwards do we move it to the top-right.
+        GLib.idle_add(self.position_top_right)
+
+        # Cover is loaded immediately after the window exists.
+        GLib.idle_add(self.force_initial_update)
+
+        # Refresh browser lazily.
+        GLib.idle_add(self.refresh_browser)
+
+        # Player polling.
+        GLib.timeout_add(
+            UPDATE_INTERVAL,
+            self.update,
+        )
+
+    # ========================================================
+    # WINDOW POSITION
+    # ========================================================
+
+    def position_top_right(self):
+
+        screen = self.get_screen()
+
+        if not screen:
+            return False
+
+        monitor = screen.get_primary_monitor()
+
+        if monitor < 0:
+            monitor = 0
+
+        workarea = screen.get_monitor_workarea(monitor)
+
+        width = self.get_allocated_width()
+        height = self.get_allocated_height()
+
+        if width <= 1:
+            width = WINDOW_SIZE
+
+        if height <= 1:
+            height = WINDOW_SIZE
+
+        x = workarea.x + workarea.width - width - WINDOW_MARGIN
+
+        y = workarea.y + WINDOW_MARGIN
+
+        self.move(x, y)
+
+        return False
+
+    # ========================================================
+    # PAGE 1 — COVER
+    # ========================================================
+
+    def create_cover_page(self):
+
+        box = Gtk.Box(
+            orientation=Gtk.Orientation.VERTICAL,
+            spacing=6,
+        )
+
+        box.set_name("main")
+
+        box.set_margin_top(10)
+        box.set_margin_bottom(10)
+        box.set_margin_start(10)
+        box.set_margin_end(10)
+
+        # ----------------------------------------------------
+        # Header
+        # ----------------------------------------------------
+
+        header = Gtk.Label(label="Music")
+
+        header.set_name("header")
+
+        header.set_single_line_mode(True)
+
+        header.set_ellipsize(Pango.EllipsizeMode.END)
+
+        box.pack_start(
+            header,
+            False,
+            False,
+            0,
+        )
+
+        # ----------------------------------------------------
+        # Cover
+        # ----------------------------------------------------
+
+        self.image = Gtk.DrawingArea()
+
+        self.image.set_hexpand(True)
+        self.image.set_vexpand(True)
+
+        self.image.set_size_request(
+            1,
+            1,
+        )
+
+        self.image.connect(
+            "draw",
+            self.draw_cover,
+        )
+
+        box.pack_start(
+            self.image,
+            True,
+            True,
+            0,
+        )
+
+        # ----------------------------------------------------
+        # Progress
+        # ----------------------------------------------------
+
+        self.progress = Gtk.ProgressBar()
+
+        self.progress.set_hexpand(True)
+
+        box.pack_start(
+            self.progress,
+            False,
+            False,
+            0,
+        )
+
+        # ----------------------------------------------------
+        # Bottom information row
+        #
+        # volume | title                         duration
+        # ----------------------------------------------------
+
+        info_row = Gtk.Box(
+            orientation=Gtk.Orientation.HORIZONTAL,
+            spacing=7,
+        )
+
+        # Volume label / scale.
+        self.volume_scale = Gtk.Scale.new_with_range(
+            Gtk.Orientation.HORIZONTAL,
+            0,
+            100,
+            5,
+        )
+
+        self.volume_scale.set_digits(0)
+
+        self.volume_scale.set_value_pos(Gtk.PositionType.BOTTOM)
+
+        self.volume_scale.set_draw_value(False)
+
+        self.volume_scale.set_size_request(
+            65,
+            -1,
+        )
+
+        self.volume_scale.set_hexpand(False)
+
+        self.volume_scale.connect(
+            "button-press-event",
+            self.volume_press,
+        )
+
+        self.volume_scale.connect(
+            "button-release-event",
+            self.volume_release,
+        )
+
+        self.volume_scale.connect(
+            "value-changed",
+            self.volume_changed,
+        )
+
+        info_row.pack_start(
+            self.volume_scale,
+            False,
+            False,
+            0,
+        )
+
+        # Song title.
+        self.song = Gtk.Label(label="Nothing playing")
+
+        self.song.set_name("song")
+
+        self.song.set_single_line_mode(True)
+
+        self.song.set_ellipsize(Pango.EllipsizeMode.END)
+
+        self.song.set_xalign(0)
+
+        self.song.set_hexpand(True)
+
+        info_row.pack_start(
+            self.song,
+            True,
+            True,
+            0,
+        )
+
+        # Duration.
+        self.duration = Gtk.Label(label="0:00 / 0:00")
+
+        self.duration.set_name("normal")
+
+        self.duration.set_single_line_mode(True)
+
+        self.duration.set_xalign(1)
+
+        info_row.pack_start(
+            self.duration,
+            False,
+            False,
+            0,
+        )
+
+        box.pack_start(
+            info_row,
+            False,
+            False,
+            0,
+        )
+
+        self.stack.add_named(
+            box,
+            "cover",
+        )
+
+    # ========================================================
+    # COVER DRAW
+    # ========================================================
+
+    def draw_cover(self, widget, cr):
+
+        if not self.cover_pixbuf:
+            return False
+
+        width = widget.get_allocated_width()
+        height = widget.get_allocated_height()
+
+        if width <= 0 or height <= 0:
+            return False
+
+        original_width = self.cover_pixbuf.get_width()
+        original_height = self.cover_pixbuf.get_height()
+
+        if original_width <= 0 or original_height <= 0:
+            return False
+
+        scale = min(
+            width / original_width,
+            height / original_height,
+        )
+
+        draw_width = original_width * scale
+        draw_height = original_height * scale
+
+        x = (width - draw_width) / 2
+        y = (height - draw_height) / 2
+
+        cr.save()
+
+        cr.translate(x, y)
+
+        cr.scale(
+            scale,
+            scale,
+        )
+
+        Gdk.cairo_set_source_pixbuf(
+            cr,
+            self.cover_pixbuf,
+            0,
+            0,
+        )
+
+        cr.get_source().set_filter(1)
+
+        cr.paint()
+
+        cr.restore()
+
+        return False
+
+    # ========================================================
+    # COVER LOADING
+    # ========================================================
+
+    def load_cover_for_song(self, info):
+
+        filepath = info.get("file")
+
+        cover = find_cover(filepath)
+
+        pixbuf = None
+
+        if cover:
+            try:
+                pixbuf = GdkPixbuf.Pixbuf.new_from_file(cover)
+
+            except Exception:
+                pixbuf = None
+
+        self.cover_pixbuf = pixbuf
+        self.last_cover_path = cover
+
+        self.image.queue_draw()
+
+    def force_initial_update(self):
+
+        info = get_current_player()
+
+        self.apply_player_info(
+            info,
+            force_cover=True,
+        )
+
+        return False
+
+    # ========================================================
+    # PAGE 2 — PLAYLIST
+    # ========================================================
+
+    def create_playlist_page(self):
+
+        outer = Gtk.Box(
+            orientation=Gtk.Orientation.VERTICAL,
+            spacing=5,
+        )
+
+        outer.set_name("main")
+
+        outer.set_margin_top(10)
+        outer.set_margin_bottom(8)
+        outer.set_margin_start(10)
+        outer.set_margin_end(10)
+
+        title = Gtk.Label(label="Playlist")
+
+        title.set_name("header")
+
+        outer.pack_start(
+            title,
+            False,
+            False,
+            0,
+        )
+
+        self.current_playlist_list = Gtk.ListBox()
+
+        self.current_playlist_list.set_name("playlist")
+
+        # We DON'T use GTK's selection as our state.
+        self.current_playlist_list.set_selection_mode(Gtk.SelectionMode.NONE)
+
+        self.current_playlist_list.set_activate_on_single_click(False)
+
+        self.current_playlist_list.set_hexpand(True)
+        self.current_playlist_list.set_vexpand(True)
+
+        self.current_playlist_list.connect(
+            "row-activated",
+            self.current_playlist_activated,
+        )
+
+        scroll = Gtk.ScrolledWindow()
+
+        scroll.set_policy(
+            Gtk.PolicyType.NEVER,
+            Gtk.PolicyType.AUTOMATIC,
+        )
+
+        scroll.set_hexpand(True)
+        scroll.set_vexpand(True)
+
+        scroll.add(self.current_playlist_list)
+
+        outer.pack_start(
+            scroll,
+            True,
+            True,
+            0,
+        )
+
+        hint = Gtk.Label(
+            label="↑ / ↓ select   Enter play   d delete   c clear   r refresh"
+        )
+
+        hint.set_name("normal")
+
+        hint.set_single_line_mode(True)
+
+        hint.set_ellipsize(Pango.EllipsizeMode.END)
+
+        outer.pack_start(
+            hint,
+            False,
+            False,
+            0,
+        )
+
+        self.stack.add_named(
+            outer,
+            "playlist",
+        )
+
+    # ========================================================
+    # LIST ROW
+    # ========================================================
+
+    def make_list_row(self, text, selected=False):
+
+        row = Gtk.ListBoxRow()
+
+        row.set_selectable(False)
+
+        row.set_activatable(True)
+
+        if selected:
+            row.set_name("selected-row")
+        else:
+            row.set_name("playlist-row")
+
+        label = Gtk.Label(label=text)
+
+        if selected:
+            label.set_name("selected-label")
+        else:
+            label.set_name("playlist-label")
+
+        label.set_single_line_mode(True)
+
+        label.set_ellipsize(Pango.EllipsizeMode.END)
+
+        label.set_xalign(0)
+
+        label.set_hexpand(True)
+
+        row.add(label)
+
+        return row
+
+    # ========================================================
+    # PLAYLIST REDRAW
+    # ========================================================
+
+    def redraw_playlist(self):
+
+        for row in self.current_playlist_list.get_children():
+            self.current_playlist_list.remove(row)
+
+        for index, song in enumerate(self.playlist):
+            selected = index == self.playlist_index
+
+            name = os.path.basename(song)
+
+            row = self.make_list_row(
+                name,
+                selected,
+            )
+
+            self.current_playlist_list.add(row)
+
+        self.current_playlist_list.show_all()
+
+        self.scroll_playlist_to_selection()
+
+    def scroll_playlist_to_selection(self):
+
+        rows = self.current_playlist_list.get_children()
+
+        if not rows:
+            return
+
+        if not (0 <= self.playlist_index < len(rows)):
+            return
+
+        row = rows[self.playlist_index]
+
+        allocation = row.get_allocation()
+
+        adjustment = self.current_playlist_list.get_parent().get_vadjustment()
+
+        value = adjustment.get_value()
+
+        page_size = adjustment.get_page_size()
+
+        top = allocation.y
+        bottom = allocation.y + allocation.height
+
+        if top < value:
+            adjustment.set_value(top)
+
+        elif bottom > value + page_size:
+            adjustment.set_value(bottom - page_size)
+
+    # ========================================================
+    # PLAYLIST REFRESH
+    # ========================================================
+
+    def refresh_current_playlist(self):
+
+        if not command_exists("mpc"):
+            return
+
+        output = run(
+            [
+                "mpc",
+                "playlist",
+            ]
+        )
+
+        new_playlist = [line.strip() for line in output.splitlines() if line.strip()]
+
+        if new_playlist == self.playlist:
+            return
+
+        old_index = self.playlist_index
+
+        self.playlist = new_playlist
+
+        if self.playlist:
+            self.playlist_index = clamp(
+                old_index,
+                0,
+                len(self.playlist) - 1,
+            )
+
+        else:
+            self.playlist_index = 0
+
+        self.redraw_playlist()
+
+    def current_playlist_activated(
+        self,
+        listbox,
+        row,
+    ):
+
+        index = row.get_index()
+
+        if index < 0 or index >= len(self.playlist):
+            return
+
+        self.playlist_index = index
+
+        self.redraw_playlist()
+
+        self.play_current_playlist_item()
+
+    def play_current_playlist_item(self):
+
+        if not self.playlist:
+            return
+
+        command(
+            [
+                "mpc",
+                "play",
+                str(self.playlist_index + 1),
+            ]
+        )
+
+    def delete_current_playlist_item(self):
+
+        if not self.playlist:
+            return
+
+        command(
+            [
+                "mpc",
+                "del",
+                str(self.playlist_index + 1),
+            ]
+        )
+
+        GLib.timeout_add(
+            120,
+            self.delayed_playlist_refresh,
+        )
+
+    def delayed_playlist_refresh(self):
+
+        self.playlist = []
+
+        self.refresh_current_playlist()
+
+        return False
+
+    def clear_playlist(self):
+
+        command(
+            [
+                "mpc",
+                "clear",
+            ]
+        )
+
+        GLib.timeout_add(
+            120,
+            self.delayed_playlist_refresh,
+        )
+
+    # ========================================================
+    # PAGE 3 — BROWSER
+    # ========================================================
+
+    def create_browser_page(self):
+
+        outer = Gtk.Box(
+            orientation=Gtk.Orientation.VERTICAL,
+            spacing=5,
+        )
+
+        outer.set_name("main")
+
+        outer.set_margin_top(10)
+        outer.set_margin_bottom(8)
+        outer.set_margin_start(10)
+        outer.set_margin_end(10)
+
+        title = Gtk.Label(label="Music")
+
+        title.set_name("header")
+
+        outer.pack_start(
+            title,
+            False,
+            False,
+            0,
+        )
+
+        self.path_label = Gtk.Label(label="~/Music")
+
+        self.path_label.set_name("normal")
+
+        self.path_label.set_single_line_mode(True)
+
+        self.path_label.set_ellipsize(Pango.EllipsizeMode.END)
+
+        self.path_label.set_xalign(0)
+
+        outer.pack_start(
+            self.path_label,
+            False,
+            False,
+            0,
+        )
+
+        self.browser_list = Gtk.ListBox()
+
+        self.browser_list.set_name("playlist")
+
+        self.browser_list.set_selection_mode(Gtk.SelectionMode.NONE)
+
+        self.browser_list.set_activate_on_single_click(False)
+
+        self.browser_list.set_hexpand(True)
+        self.browser_list.set_vexpand(True)
+
+        self.browser_list.connect(
+            "row-activated",
+            self.browser_activated,
+        )
+
+        scroll = Gtk.ScrolledWindow()
+
+        scroll.set_policy(
+            Gtk.PolicyType.NEVER,
+            Gtk.PolicyType.AUTOMATIC,
+        )
+
+        scroll.set_hexpand(True)
+        scroll.set_vexpand(True)
+
+        scroll.add(self.browser_list)
+
+        outer.pack_start(
+            scroll,
+            True,
+            True,
+            0,
+        )
+
+        hint = Gtk.Label(
+            label="↑ / ↓ select   Enter play/open   Backspace up   r refresh"
+        )
+
+        hint.set_name("normal")
+
+        hint.set_single_line_mode(True)
+
+        hint.set_ellipsize(Pango.EllipsizeMode.END)
+
+        outer.pack_start(
+            hint,
+            False,
+            False,
+            0,
+        )
+
+        self.stack.add_named(
+            outer,
+            "browser",
+        )
+
+    # ========================================================
+    # BROWSER REDRAW
+    # ========================================================
+
+    def redraw_browser(self):
+
+        for row in self.browser_list.get_children():
+            self.browser_list.remove(row)
+
+        for index, entry in enumerate(self.browser_entries):
+            name, path, is_dir = entry
+
+            display = "[" + name + "]" if is_dir else name
+
+            selected = index == self.browser_index
+
+            row = self.make_list_row(
+                display,
+                selected,
+            )
+
+            self.browser_list.add(row)
+
+        self.browser_list.show_all()
+
+        self.scroll_browser_to_selection()
+
+    def scroll_browser_to_selection(self):
+
+        rows = self.browser_list.get_children()
+
+        if not rows:
+            return
+
+        if not (0 <= self.browser_index < len(rows)):
+            return
+
+        row = rows[self.browser_index]
+
+        allocation = row.get_allocation()
+
+        adjustment = self.browser_list.get_parent().get_vadjustment()
+
+        value = adjustment.get_value()
+        page_size = adjustment.get_page_size()
+
+        top = allocation.y
+        bottom = allocation.y + allocation.height
+
+        if top < value:
+            adjustment.set_value(top)
+
+        elif bottom > value + page_size:
+            adjustment.set_value(bottom - page_size)
+
+    # ========================================================
+    # BROWSER REFRESH
+    # ========================================================
+
+    def refresh_browser(self):
+
+        self.browser_entries = directory_entries(self.browser_path)
+
+        if self.browser_entries:
+            self.browser_index = clamp(
+                self.browser_index,
+                0,
+                len(self.browser_entries) - 1,
+            )
+        else:
+            self.browser_index = 0
+
+        self.redraw_browser()
+
+        try:
+            relative = os.path.relpath(
+                self.browser_path,
+                MUSIC_DIR,
+            )
+
+            if relative == ".":
+                relative = ""
+
+            display = "~/Music"
+
+            if relative:
+                display += "/" + relative
+
+            self.path_label.set_text(display)
+
+        except Exception:
+            self.path_label.set_text(self.browser_path)
+
+        return False
+
+    def browser_activated(
+        self,
+        listbox,
+        row,
+    ):
+
+        index = row.get_index()
+
+        if index < 0 or index >= len(self.browser_entries):
+            return
+
+        self.browser_index = index
+
+        name, path, is_dir = self.browser_entries[index]
+
+        if is_dir:
+            self.play_folder(path)
+        else:
+            self.play_file(path)
+
+    # ========================================================
+    # PLAY FOLDER
+    # ========================================================
+
+    def play_folder(self, path):
+
+        if not command_exists("mpc"):
+            return
+
+        try:
+            relative = os.path.relpath(
+                path,
+                MUSIC_DIR,
+            )
+
+        except Exception:
+            return
+
+        command(
+            [
+                "mpc",
+                "clear",
+            ]
+        )
+
+        command(
+            [
+                "mpc",
+                "add",
+                relative,
+            ]
+        )
+
+        GLib.timeout_add(
+            150,
+            self.start_playlist,
+        )
+
+    # ========================================================
+    # PLAY FILE
+    # ========================================================
+
+    def play_file(self, path):
+
+        if not command_exists("mpc"):
+            return
+
+        try:
+            relative = os.path.relpath(
+                path,
+                MUSIC_DIR,
+            )
+
+        except Exception:
+            return
+
+        command(
+            [
+                "mpc",
+                "clear",
+            ]
+        )
+
+        command(
+            [
+                "mpc",
+                "add",
+                relative,
+            ]
+        )
+
+        GLib.timeout_add(
+            150,
+            self.start_playlist,
+        )
+
+    def start_playlist(self):
+
+        command(
+            [
+                "mpc",
+                "play",
+                "1",
+            ]
+        )
+
+        return False
+
+    # ========================================================
+    # VOLUME SLIDER
+    # ========================================================
+
+    def volume_press(
+        self,
+        widget,
+        event,
+    ):
+
+        self.user_moving_slider = True
+
+        return False
+
+    def volume_release(
+        self,
+        widget,
+        event,
+    ):
+
+        self.user_moving_slider = False
+
+        # Snap exactly to increments of 5.
+        value = round(widget.get_value() / 5) * 5
+
+        value = clamp(
+            value,
+            0,
+            100,
+        )
+
+        widget.set_value(value)
+
+        command(
+            [
+                "mpc",
+                "volume",
+                str(int(value)),
+            ]
+        )
+
+        return False
+
+    def volume_changed(self, widget):
+
+        if not self.user_moving_slider:
+            return
+
+        value = round(widget.get_value() / 5) * 5
+
+        value = clamp(
+            value,
+            0,
+            100,
+        )
+
+        # Don't constantly invoke mpc while dragging.
+        # GTK slider still visually follows the mouse.
+        # Actual volume is committed on release.
+
+    # ========================================================
+    # APPLY PLAYER INFO
+    # ========================================================
+
+    def apply_player_info(
+        self,
+        info,
+        force_cover=False,
+    ):
+
+        self.song.set_text(info["title"])
+
+        self.progress.set_fraction(
+            clamp(
+                info["progress"],
+                0.0,
+                1.0,
+            )
+        )
+
+        self.duration.set_text(
+            f"{format_time(info['elapsed'])} / {format_time(info['duration'])}"
+        )
+
+        if not self.user_moving_slider:
+            self.volume_scale.set_value(info["volume"])
+
+        identifier = (
+            info["player"],
+            info["file"],
+            info["title"],
+            info["duration"],
+        )
+
+        if force_cover or identifier != self.last_song or self.cover_pixbuf is None:
+            self.last_song = identifier
+
+            self.load_cover_for_song(info)
+
+    # ========================================================
+    # UPDATE
+    # ========================================================
+
+    def update(self):
+
+        info = get_current_player()
+
+        self.apply_player_info(info)
+
+        # ----------------------------------------------------
+        # Theme
+        # ----------------------------------------------------
+
+        try:
+            wal_mtime = os.path.getmtime(WAL_COLORS)
+        except Exception:
+            wal_mtime = None
+
+        try:
+            xr_mtime = os.path.getmtime(XRESOURCES)
+        except Exception:
+            xr_mtime = None
+
+        if wal_mtime != self.last_wal_mtime or xr_mtime != self.last_xresources_mtime:
+            self.last_wal_mtime = wal_mtime
+            self.last_xresources_mtime = xr_mtime
+
+            apply_theme()
+
+        # ----------------------------------------------------
+        # Only refresh playlist when actually on that page.
+        # ----------------------------------------------------
+
+        if self.page == 1:
+            self.refresh_current_playlist()
+
+        return True
+
+    # ========================================================
+    # PAGE SWITCH
+    # ========================================================
+
+    def switch_page(self, page):
+
+        if page == self.page:
+            return
+
+        self.page = page
+
+        pages = [
+            "cover",
+            "playlist",
+            "browser",
+        ]
+
+        self.stack.set_visible_child_name(pages[page])
+
+        if page == 0:
+            info = get_current_player()
+
+            self.apply_player_info(
+                info,
+                force_cover=True,
+            )
+
+            self.image.queue_draw()
+
+        elif page == 1:
+            self.playlist = []
+
+            self.playlist_index = 0
+
+            self.refresh_current_playlist()
+
+        elif page == 2:
+            self.browser_index = clamp(
+                self.browser_index,
+                0,
+                max(
+                    0,
+                    len(self.browser_entries) - 1,
+                ),
+            )
+
+            self.refresh_browser()
+
+    # ========================================================
+    # KEYBOARD
+    # ========================================================
+
+    def on_key_press(
+        self,
+        widget,
+        event,
+    ):
+
+        key = Gdk.keyval_name(event.keyval)
+
+        # ----------------------------------------------------
+        # TAB
+        # ----------------------------------------------------
+
+        if key == "Tab":
+            next_page = (self.page + 1) % 3
+
+            self.switch_page(next_page)
+
+            return True
+
+        # ----------------------------------------------------
+        # QUIT
+        # ----------------------------------------------------
+
+        if key in (
+            "q",
+            "Escape",
+        ):
+            self.destroy()
+
+            return True
+
+        # ----------------------------------------------------
+        # PAGE 1 — COVER
+        # ----------------------------------------------------
+
+        if self.page == 0:
+            if key == "Left":
+                player_command("previous")
+
+                return True
+
+            if key == "Right":
+                player_command("next")
+
+                return True
+
+            # p = PLAY
+            if key.lower() == "p":
+                player_command("play")
+
+                return True
+
+            # s = STOP
+            if key.lower() == "s":
+                player_command("stop")
+
+                return True
+
+            # Up / Down = volume ±5
+            if key == "Up":
+                player_command("volume_up")
+
+                return True
+
+            if key == "Down":
+                player_command("volume_down")
+
+                return True
+
+        # ----------------------------------------------------
+        # PAGE 2 — PLAYLIST
+        # ----------------------------------------------------
+
+        elif self.page == 1:
+            if key == "Up":
+                if self.playlist:
+                    # NO WRAP.
+                    if self.playlist_index > 0:
+                        self.playlist_index -= 1
+
+                        self.redraw_playlist()
+
+                return True
+
+            if key == "Down":
+                if self.playlist:
+                    # NO WRAP.
+                    if self.playlist_index < len(self.playlist) - 1:
+                        self.playlist_index += 1
+
+                        self.redraw_playlist()
+
+                return True
+
+            if key == "Return":
+                self.play_current_playlist_item()
+
+                return True
+
+            if key.lower() == "d":
+                self.delete_current_playlist_item()
+
+                return True
+
+            if key.lower() == "c":
+                self.clear_playlist()
+
+                return True
+
+            if key.lower() == "r":
+                self.playlist = []
+
+                self.refresh_current_playlist()
+
+                return True
+
+        # ----------------------------------------------------
+        # PAGE 3 — BROWSER
+        # ----------------------------------------------------
+
+        elif self.page == 2:
+            if key == "Up":
+                if self.browser_entries:
+                    # NO WRAP.
+                    if self.browser_index > 0:
+                        self.browser_index -= 1
+
+                        self.redraw_browser()
+
+                return True
+
+            if key == "Down":
+                if self.browser_entries:
+                    # NO WRAP.
+                    if self.browser_index < len(self.browser_entries) - 1:
+                        self.browser_index += 1
+
+                        self.redraw_browser()
+
+                return True
+
+            if key == "Return":
+                if not self.browser_entries:
+                    return True
+
+                name, path, is_dir = self.browser_entries[self.browser_index]
+
+                if is_dir:
+                    self.play_folder(path)
+                else:
+                    self.play_file(path)
+
+                return True
+
+            if key == "BackSpace":
+                if self.browser_path != MUSIC_DIR:
+                    parent = os.path.dirname(self.browser_path)
+
+                    if parent == MUSIC_DIR or parent.startswith(MUSIC_DIR + os.sep):
+                        self.browser_path = parent
+
+                    else:
+                        self.browser_path = MUSIC_DIR
+
+                    self.browser_index = 0
+
+                    self.refresh_browser()
+
+                return True
+
+            if key.lower() == "r":
+                self.refresh_browser()
+
+                return True
+
+        return False
+
+
+# ============================================================
+# MAIN
+# ============================================================
+
+if __name__ == "__main__":
+    window = MusicWindow()
+
+    Gtk.main()

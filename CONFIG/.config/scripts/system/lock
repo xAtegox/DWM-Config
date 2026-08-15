@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+xdotool key super+ctrl+b
+slock
+xdotool key super+ctrl+b
+pkill -RTMIN+10 dwmblocks

@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# boot-theme-restore — full theme refresh, safe to call from .xinitrc
+
+ln -sf ~/.cache/wal/colors.Xresources ~/.Xresources
+{
+  cat ~/.cache/wal/colors.Xresources
+  [ -f ~/.cache/wal/xrdb_extra ] && cat ~/.cache/wal/xrdb_extra
+  [ -f ~/.cache/wal/dmenu ] && cat ~/.cache/wal/dmenu
+} >/tmp/xresources_combined.tmp
+xrdb -load /tmp/xresources_combined.tmp
+
+# Wait for dwm to actually be up before poking it, same pattern as .xinitrc's wait_for_dwm
+for i in $(seq 1 20); do
+  pgrep -x dwm >/dev/null && break
+  sleep 0.2
+done
+
+if pgrep -x dwm >/dev/null; then
+  xdotool key super+ctrl+x
+  pkill -RTMIN+8 dwmblocks 2>/dev/null || true
+  pkill -RTMIN+10 dwmblocks 2>/dev/null || true
+fi
+
+if [ -f ~/.cache/wal/sequences ]; then
+  for pts in /dev/pts/*; do
+    [ -w "$pts" ] && timeout 1 cat ~/.cache/wal/sequences >"$pts" 2>/dev/null &
+  done
+  wait
+fi
+
+# Only talk to kitty if a kitty socket/instance actually exists
+if command -v kitty &>/dev/null && pgrep -x kitty >/dev/null; then
+  timeout 2 kitty @ set-colors --all ~/.cache/wal/colors-kitty.conf 2>/dev/null || true
+fi
+
+~/Linux_Config/Zed/zed-theme-wal/generate_theme &
+if pgrep -x zed-editor >/dev/null; then
+  ~/Linux_Config/Zed/zed-theme-wal/generate_theme
+  pkill -x zed-editor
+  sleep 0.2
+  zeditor >/dev/null 2>&1 &
+fi

@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# mic-listener: watches for mic use/mute changes and signals dwmblocks
+pactl subscribe | while read -r line; do
+    if echo "$line" | grep -Eq "source-output|'change' on source #"; then
+        pkill -RTMIN+13 dwmblocks
+    fi
+done

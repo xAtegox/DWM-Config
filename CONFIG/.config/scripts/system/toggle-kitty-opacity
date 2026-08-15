@@ -1,0 +1,51 @@
+#!/bin/bash
+# Toggle picom window transparency + sync Emacs state
+STATE="/tmp/transparency-state"
+PERSISTENT="$HOME/.cache/transparency-state"
+mkdir -p "$HOME/.cache"
+
+# Initialize state
+if [ ! -f "$STATE" ]; then
+	if [ -f "$PERSISTENT" ]; then
+		cp "$PERSISTENT" "$STATE"
+	else
+		echo "transparent" >"$STATE"
+		cp "$STATE" "$PERSISTENT"
+	fi
+fi
+
+# Check picom
+if ! pgrep -x "picom" >/dev/null; then
+	exit 1
+fi
+
+# Collect windows
+kitty_windows=$(xdotool search --class "kitty" 2>/dev/null)
+st_windows=$(xdotool search --class "st-256color" 2>/dev/null)
+emacs_windows=$(xdotool search --class "Emacs" 2>/dev/null)
+all_windows=$(printf "%s\n%s" "$kitty_windows" "$st_windows" "$emacs_windows" | grep -v '^$')
+if [ -z "$all_windows" ]; then
+	exit 1
+fi
+
+# Decide direction from the state file (not a live xprop read, which is
+# often unset on a fresh window and caused the "lighter, then normal on
+# second press" bug)
+current_state=$(cat "$STATE" 2>/dev/null)
+if [ "$current_state" = "opaque" ]; then
+	opacity_uint32=$((85 * 42949672))
+	echo "transparent" >"$STATE"
+	cp "$STATE" "$PERSISTENT"
+else
+	opacity_uint32=$((100 * 42949672))
+	echo "opaque" >"$STATE"
+	cp "$STATE" "$PERSISTENT"
+fi
+
+# Apply to kitty + st + emacs
+echo "$all_windows" | while read -r window_id; do
+	xprop -id "$window_id" \
+		-f _NET_WM_WINDOW_OPACITY 32c \
+		-set _NET_WM_WINDOW_OPACITY "$opacity_uint32" \
+		2>/dev/null
+done

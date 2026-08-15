@@ -1,0 +1,10 @@
+#!/bin/sh
+
+udevadm monitor --udev --subsystem-match=power_supply |
+  while read -r line; do
+    case "$line" in
+    *BAT*)
+      pkill -RTMIN+1 dwmblocks
+      ;;
+    esac
+  done

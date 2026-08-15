@@ -1,0 +1,408 @@
+#!/usr/bin/env bash
+
+# ─────────────────────────────────────────────
+# Screen recorder
+# ─────────────────────────────────────────────
+
+REC_FLAG="$HOME/.cache/recording_flag"
+REC_COOLDOWN_FLAG="$HOME/.cache/recording_cooldown"
+
+COOLDOWN_SECS=5
+BASE_REC_DIR="$HOME/Videos/screenrecord"
+
+mkdir -p "$BASE_REC_DIR"
+mkdir -p "$(dirname "$REC_FLAG")"
+
+# ─────────────────────────────────────────────
+# Helpers
+# ─────────────────────────────────────────────
+
+is_recording() {
+  [[ -f "$REC_FLAG" ]]
+}
+
+is_on_ac() {
+  local supply
+
+  for supply in /sys/class/power_supply/*; do
+    [[ -f "$supply/type" ]] || continue
+
+    if [[ "$(cat "$supply/type")" == "Mains" ]]; then
+      if [[ -f "$supply/online" ]] &&
+        [[ "$(cat "$supply/online")" == "1" ]]; then
+        return 0
+      fi
+    fi
+  done
+
+  return 1
+}
+
+cooldown_remaining() {
+  if [[ -f "$REC_COOLDOWN_FLAG" ]]; then
+    local last_stop
+    local now
+    local elapsed
+
+    last_stop=$(cat "$REC_COOLDOWN_FLAG" 2>/dev/null)
+    now=$(date +%s)
+
+    if [[ "$last_stop" =~ ^[0-9]+$ ]]; then
+      elapsed=$((now - last_stop))
+
+      if ((elapsed < COOLDOWN_SECS)); then
+        echo $((COOLDOWN_SECS - elapsed))
+        return 0
+      fi
+    fi
+  fi
+
+  return 1
+}
+
+# ─────────────────────────────────────────────
+# Start
+# ─────────────────────────────────────────────
+
+start_recording() {
+
+  if is_recording; then
+    exit 1
+  fi
+
+  local remaining
+
+  if remaining=$(cooldown_remaining); then
+    notify-send \
+      "Recording on cooldown" \
+      "Wait ${remaining}s before starting again"
+    exit 1
+  fi
+
+  # Date directory
+  local day_folder
+  day_folder="$(date +%d-%m-%Y)"
+
+  local session_path
+  session_path="$BASE_REC_DIR/$day_folder"
+
+  mkdir -p "$session_path"
+
+  # Filename
+  local timestamp
+  timestamp="$(date +%H-%M-%S)"
+
+  local output
+  output="$session_path/${timestamp}.mp4"
+
+  # Detect screen size
+  local geometry
+
+  geometry="$(xrandr 2>/dev/null |
+    awk '/\*/ {print $1; exit}')"
+
+  [[ -z "$geometry" ]] && geometry="1920x1200"
+
+  # Audio devices
+  local mic_audio
+  local default_sink
+  local sys_audio
+
+  mic_audio="$(
+    pactl get-default-source 2>/dev/null
+  )"
+
+  default_sink="$(
+    pactl get-default-sink 2>/dev/null
+  )"
+
+  sys_audio="$(
+    pactl list short sources |
+      awk -v sink="$default_sink.monitor" '$2 == sink {print $2; exit}'
+  )"
+
+  # Fallback if PulseAudio/PipeWire names differ
+  if [[ -z "$mic_audio" ]]; then
+    mic_audio="$(pactl info |
+      awk -F': ' '/Default Source/ {print $2; exit}')"
+  fi
+
+  if [[ -z "$default_sink" ]]; then
+    default_sink="$(pactl info |
+      awk -F': ' '/Default Sink/ {print $2; exit}')"
+  fi
+
+  if [[ -z "$sys_audio" ]]; then
+    sys_audio="$(
+      pactl list short sources |
+        awk -v sink="${default_sink}.monitor" '$2 == sink {print $2; exit}'
+    )"
+  fi
+
+  # ─────────────────────────────────────────
+  # Create recording state BEFORE starting
+  # ─────────────────────────────────────────
+
+  echo "$output" >"${REC_FLAG}.output"
+
+  touch "$REC_FLAG"
+
+  notify-send \
+    "Recording STARTED" \
+    "$timestamp — x264 CPU"
+
+  # ─────────────────────────────────────────
+  # FFmpeg
+  #
+  # One encoder for every situation:
+  # libx264
+  # ─────────────────────────────────────────
+
+  if [[ -n "$sys_audio" && -n "$mic_audio" ]]; then
+
+    ffmpeg \
+      -hide_banner \
+      -loglevel error \
+      \
+      -thread_queue_size 1024 \
+      -f x11grab \
+      -framerate 30 \
+      -video_size "$geometry" \
+      -draw_mouse 1 \
+      -i ":0.0+0,0" \
+      \
+      -thread_queue_size 1024 \
+      -f pulse \
+      -i "$sys_audio" \
+      \
+      -thread_queue_size 1024 \
+      -f pulse \
+      -i "$mic_audio" \
+      \
+      -filter_complex \
+      "[1:a]volume=1.5[sys];\
+             [2:a]volume=1.2[mic];\
+             [sys][mic]amix=inputs=2:duration=longest:dropout_transition=0[aout]" \
+      \
+      -map 0:v:0 \
+      -map "[aout]" \
+      \
+      -c:v libx264 \
+      -preset ultrafast \
+      -crf 23 \
+      -pix_fmt yuv420p \
+      -g 30 \
+      \
+      -c:a aac \
+      -b:a 192k \
+      \
+      -fps_mode cfr \
+      \
+      -movflags +faststart \
+      \
+      -y "$output" \
+      >"${REC_FLAG}.log" 2>&1 &
+
+  elif [[ -n "$sys_audio" ]]; then
+
+    ffmpeg \
+      -hide_banner \
+      -loglevel error \
+      \
+      -thread_queue_size 1024 \
+      -f x11grab \
+      -framerate 30 \
+      -video_size "$geometry" \
+      -draw_mouse 1 \
+      -i ":0.0+0,0" \
+      \
+      -thread_queue_size 1024 \
+      -f pulse \
+      -i "$sys_audio" \
+      \
+      -map 0:v:0 \
+      -map 1:a:0 \
+      \
+      -c:v libx264 \
+      -preset ultrafast \
+      -crf 23 \
+      -pix_fmt yuv420p \
+      -g 30 \
+      \
+      -c:a aac \
+      -b:a 192k \
+      \
+      -fps_mode cfr \
+      -movflags +faststart \
+      \
+      -y "$output" \
+      >"${REC_FLAG}.log" 2>&1 &
+
+  else
+
+    # No audio available
+    ffmpeg \
+      -hide_banner \
+      -loglevel error \
+      \
+      -thread_queue_size 1024 \
+      -f x11grab \
+      -framerate 30 \
+      -video_size "$geometry" \
+      -draw_mouse 1 \
+      -i ":0.0+0,0" \
+      \
+      -map 0:v:0 \
+      \
+      -c:v libx264 \
+      -preset ultrafast \
+      -crf 23 \
+      -pix_fmt yuv420p \
+      -g 30 \
+      \
+      -an \
+      \
+      -fps_mode cfr \
+      -movflags +faststart \
+      \
+      -y "$output" \
+      >"${REC_FLAG}.log" 2>&1 &
+  fi
+
+  local pid=$!
+
+  echo "$pid" >"${REC_FLAG}.pid"
+
+  # Make sure FFmpeg actually started
+  sleep 0.5
+
+  if ! kill -0 "$pid" 2>/dev/null; then
+
+    notify-send \
+      "Recording FAILED" \
+      "FFmpeg exited immediately."
+
+    rm -f \
+      "$REC_FLAG" \
+      "${REC_FLAG}.pid" \
+      "${REC_FLAG}.output"
+
+    if [[ -s "${REC_FLAG}.log" ]]; then
+      notify-send \
+        "FFmpeg error" \
+        "$(tail -n 3 "${REC_FLAG}.log")"
+    fi
+
+    return 1
+  fi
+
+  pkill -RTMIN+12 dwmblocks 2>/dev/null
+}
+
+# ─────────────────────────────────────────────
+# Stop
+# ─────────────────────────────────────────────
+
+stop_recording() {
+
+  if ! is_recording; then
+    exit 1
+  fi
+
+  local pid
+  local output
+
+  pid="$(cat "${REC_FLAG}.pid" 2>/dev/null)"
+  output="$(cat "${REC_FLAG}.output" 2>/dev/null)"
+
+  if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+
+    # Ask FFmpeg to finish the MP4 properly
+    kill -INT "$pid"
+
+    # Give FFmpeg time to finalize
+    while kill -0 "$pid" 2>/dev/null; do
+      sleep 0.5
+    done
+  fi
+
+  rm -f \
+    "$REC_FLAG" \
+    "${REC_FLAG}.pid" \
+    "${REC_FLAG}.output"
+
+  if [[ -f "$output" ]]; then
+
+    notify-send \
+      "Recording Saved" \
+      "$(basename "$output")"
+
+    # Copy file URI to clipboard
+    if command -v xclip >/dev/null 2>&1; then
+      printf 'file://%s' "$output" |
+        xclip -selection clipboard -t text/uri-list
+    fi
+
+  else
+
+    notify-send \
+      "Recording Failed" \
+      "No output file was created."
+
+    if [[ -s "${REC_FLAG}.log" ]]; then
+      notify-send \
+        "FFmpeg error" \
+        "$(tail -n 5 "${REC_FLAG}.log")"
+    fi
+  fi
+
+  date +%s >"$REC_COOLDOWN_FLAG"
+
+  pkill -RTMIN+12 dwmblocks 2>/dev/null
+}
+
+# ─────────────────────────────────────────────
+# Status
+# ─────────────────────────────────────────────
+
+status() {
+
+  if is_recording; then
+    echo "●"
+  else
+    return 1
+  fi
+}
+
+# ─────────────────────────────────────────────
+# Command
+# ─────────────────────────────────────────────
+
+case "$1" in
+
+start)
+  start_recording
+  ;;
+
+stop)
+  stop_recording
+  ;;
+
+toggle)
+  if is_recording; then
+    stop_recording
+  else
+    start_recording
+  fi
+  ;;
+
+status)
+  status
+  ;;
+
+*)
+  echo "Usage: $0 {start|stop|toggle|status}"
+  exit 1
+  ;;
+
+esac

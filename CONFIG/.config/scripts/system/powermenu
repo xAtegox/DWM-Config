@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+
+# ── Spawn kitty window ────────────────────────────────────────────────────────
+if [[ "$1" != "--inside" ]]; then
+  read -r SCREEN_W SCREEN_H < <(
+    xrandr --current | grep ' connected primary' |
+      grep -oP '\d+x\d+' | head -1 | tr 'x' ' '
+  )
+  [ -z "$SCREEN_W" ] && SCREEN_W=1920
+  [ -z "$SCREEN_H" ] && SCREEN_H=1080
+
+  WIN_W=32
+  WIN_H=16
+  FONT_W=8
+  FONT_H=16
+  POS_X=$(((SCREEN_W - WIN_W * FONT_W) / 2))
+  POS_Y=$(((SCREEN_H - WIN_H * FONT_H) / 2))
+
+  SELF="$(realpath "$0")"
+  WAL_KITTY="$HOME/.cache/wal/colors-kitty.conf"
+  KITTY_CONF="/tmp/powermenu_kitty_$$.conf"
+
+  printf '# powermenu\n' >"$KITTY_CONF"
+  [ -f "$WAL_KITTY" ] && cat "$WAL_KITTY" >>"$KITTY_CONF"
+  printf 'font_size 13\n' >>"$KITTY_CONF"
+  printf 'confirm_os_window_close 0\n' >>"$KITTY_CONF"
+  printf 'remember_window_size no\n' >>"$KITTY_CONF"
+  printf 'initial_window_width %sc\n' "$WIN_W" >>"$KITTY_CONF"
+  printf 'initial_window_height %sc\n' "$WIN_H" >>"$KITTY_CONF"
+
+  exec kitty \
+    --class "powermenu" \
+    --title "Powermenu" \
+    --override "initial_window_x=${POS_X}" \
+    --override "initial_window_y=${POS_Y}" \
+    --config "$KITTY_CONF" \
+    -e "$SELF" --inside
+
+  rm -f "$KITTY_CONF"
+fi
+
+# ── Menu ──────────────────────────────────────────────────────────────────────
+choice=$(printf '⏻  shutdown\n🔄  reboot\n⚙️  bios\n' | fzf \
+  --no-sort \
+  --reverse \
+  --style=full \
+  --border=sharp \
+  --border-label="─── power ───" \
+  --border-label-pos=2 \
+  --no-scrollbar \
+  --no-info \
+  --height=100% \
+  --prompt=" ❯ " \
+  --pointer="▌" \
+  --padding="0,1" \
+  --color="bg:-1,bg+:#0d0f0b,fg:#4a4d44,fg+:#d8d8d0" \
+  --color="hl:#6a7d5e,hl+:#8aaa74" \
+  --color="border:#222520" \
+  --color="prompt:#8aaa74,pointer:#c05050,label:#2a3028" \
+  --bind="esc:abort")
+
+case "$choice" in
+*sleep*) systemctl suspend ;;
+*shutdown*) systemctl poweroff ;;
+*reboot*) systemctl reboot ;;
+*picker*) systemctl reboot --boot-loader-menu=0 ;;
+*bios*) systemctl reboot --firmware-setup ;;
+esac

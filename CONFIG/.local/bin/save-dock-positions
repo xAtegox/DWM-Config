@@ -1,0 +1,106 @@
+#!/bin/sh
+
+export DISPLAY=:0
+export XAUTHORITY="$HOME/.Xauthority"
+
+POSFILE="$HOME/.config/wm-dock/positions.conf"
+
+mkdir -p "$(dirname "$POSFILE")"
+touch "$POSFILE"
+
+APPS='
+wmbatteries  wmbatteries  DockApp
+wmmemload    wmmemload    DockApp
+wmcpuload    wmcpuload    DockApp
+wmclockmon   wmclockmon   DockApp
+wmnetload    wmnetload    Wmnetload
+'
+
+find_window() {
+  INSTANCE="$1"
+  CLASS="$2"
+
+  wmctrl -lx | awk \
+    -v wanted="$INSTANCE.$CLASS" \
+    '$3 == wanted {print $1; exit}'
+}
+
+get_actual_position() {
+  ID="$1"
+
+  xwininfo -id "$ID" 2>/dev/null |
+    awk '
+            /Absolute upper-left X:/ { x=$4 }
+            /Absolute upper-left Y:/ { y=$4 }
+
+            END {
+                if (x != "" && y != "")
+                    print x "|" y
+            }
+        '
+}
+
+save_position() {
+  NAME="$1"
+  X="$2"
+  Y="$3"
+
+  TMP="$POSFILE.tmp"
+
+  awk -F'|' \
+    -v name="$NAME" \
+    -v x="$X" \
+    -v y="$Y" '
+            $1 == name {
+                print name "|" x "|" y
+                found=1
+                next
+            }
+
+            {
+                print
+            }
+
+            END {
+                if (!found)
+                    print name "|" x "|" y
+            }
+        ' "$POSFILE" >"$TMP"
+
+  mv "$TMP" "$POSFILE"
+}
+
+echo "Saving current dockapp positions..."
+echo
+
+echo "$APPS" |
+  while read -r NAME INSTANCE CLASS; do
+    [ -z "$NAME" ] && continue
+
+    ID=$(find_window "$INSTANCE" "$CLASS")
+
+    if [ -z "$ID" ]; then
+      echo "NOT FOUND: $NAME"
+      continue
+    fi
+
+    GEOM=$(get_actual_position "$ID")
+
+    if [ -z "$GEOM" ]; then
+      echo "FAILED: $NAME"
+      continue
+    fi
+
+    X=$(echo "$GEOM" | cut -d'|' -f1)
+    Y=$(echo "$GEOM" | cut -d'|' -f2)
+
+    save_position "$NAME" "$X" "$Y"
+
+    echo "$NAME -> X=$X Y=$Y"
+  done
+
+echo
+echo "Saved to:"
+echo "$POSFILE"
+echo
+cat "$POSFILE"

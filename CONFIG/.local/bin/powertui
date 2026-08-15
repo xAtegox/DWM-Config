@@ -1,0 +1,836 @@
+#!/usr/bin/env python3
+
+import curses
+import os
+import re
+import shutil
+import subprocess
+import time
+from pathlib import Path
+
+
+# ─────────────────────────────────────────────────────────────
+# Paths
+# ─────────────────────────────────────────────────────────────
+
+POWER_SUPPLY = Path("/sys/class/power_supply")
+DRM = Path("/sys/class/drm")
+PCI = Path("/sys/bus/pci/devices")
+
+
+# ─────────────────────────────────────────────────────────────
+# Helpers
+# ─────────────────────────────────────────────────────────────
+
+
+def read_file(path, default=None):
+    try:
+        return Path(path).read_text().strip()
+    except (OSError, ValueError):
+        return default
+
+
+def read_int(path, default=None):
+    value = read_file(path)
+    if value is None:
+        return default
+
+    try:
+        return int(value)
+    except ValueError:
+        return default
+
+
+def command_exists(name):
+    return shutil.which(name) is not None
+
+
+def run_command(command, timeout=1.0):
+    try:
+        result = subprocess.run(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            timeout=timeout,
+        )
+        return result.stdout.strip()
+    except (
+        OSError,
+        subprocess.SubprocessError,
+        subprocess.TimeoutExpired,
+    ):
+        return None
+
+
+# ─────────────────────────────────────────────────────────────
+# CPU
+# ─────────────────────────────────────────────────────────────
+
+
+class CPU:
+    def __init__(self):
+        self.previous = None
+
+    def _stats(self):
+        line = read_file("/proc/stat")
+
+        if not line:
+            return None
+
+        for row in line.splitlines():
+            if row.startswith("cpu "):
+                values = row.split()[1:]
+
+                try:
+                    values = [int(x) for x in values]
+                except ValueError:
+                    return None
+
+                idle = values[3] + (values[4] if len(values) > 4 else 0)
+                total = sum(values)
+
+                return total, idle
+
+        return None
+
+    def usage(self):
+        current = self._stats()
+
+        if current is None:
+            return 0.0
+
+        if self.previous is None:
+            self.previous = current
+            return 0.0
+
+        total1, idle1 = self.previous
+        total2, idle2 = current
+
+        self.previous = current
+
+        total_delta = total2 - total1
+        idle_delta = idle2 - idle1
+
+        if total_delta <= 0:
+            return 0.0
+
+        return max(
+            0.0,
+            min(
+                100.0,
+                100.0 * (total_delta - idle_delta) / total_delta,
+            ),
+        )
+
+    def name(self):
+        cpuinfo = read_file("/proc/cpuinfo", "")
+
+        for line in cpuinfo.splitlines():
+            if line.lower().startswith("model name"):
+                return line.split(":", 1)[1].strip()
+
+        for line in cpuinfo.splitlines():
+            if line.lower().startswith("hardware"):
+                return line.split(":", 1)[1].strip()
+
+        return "Unknown CPU"
+
+    def temperature(self):
+        temperatures = []
+
+        for path in Path("/sys/class/hwmon").glob("hwmon*/temp*_input"):
+            value = read_int(path)
+
+            if value is None:
+                continue
+
+            temp = value / 1000.0
+
+            if 0 < temp < 120:
+                temperatures.append(temp)
+
+        if not temperatures:
+            for path in Path("/sys/class/thermal").glob("thermal_zone*/temp"):
+                value = read_int(path)
+
+                if value is None:
+                    continue
+
+                temp = value / 1000.0
+
+                if 0 < temp < 120:
+                    temperatures.append(temp)
+
+        if not temperatures:
+            return None
+
+        return max(temperatures)
+
+
+# ─────────────────────────────────────────────────────────────
+# RAM
+# ─────────────────────────────────────────────────────────────
+
+
+class RAM:
+    def read(self):
+        data = {}
+
+        meminfo = read_file("/proc/meminfo", "")
+
+        for line in meminfo.splitlines():
+            parts = line.split()
+
+            if len(parts) < 2:
+                continue
+
+            key = parts[0].rstrip(":")
+
+            try:
+                value = int(parts[1])
+            except ValueError:
+                continue
+
+            # /proc/meminfo values are kB
+            data[key] = value * 1024
+
+        total = data.get("MemTotal", 0)
+        available = data.get("MemAvailable", 0)
+
+        if not total:
+            return 0, 0, 0.0
+
+        used = total - available
+        percent = used / total * 100
+
+        return used, total, percent
+
+
+# ─────────────────────────────────────────────────────────────
+# Power
+# ─────────────────────────────────────────────────────────────
+
+
+class Power:
+    def __init__(self):
+        self.battery = None
+
+        for path in POWER_SUPPLY.glob("BAT*"):
+            if (path / "status").exists():
+                self.battery = path
+                break
+
+    def battery_status(self):
+        if not self.battery:
+            return "Desktop"
+
+        return read_file(
+            self.battery / "status",
+            "Unknown",
+        )
+
+    def battery_percent(self):
+        if not self.battery:
+            return None
+
+        capacity = read_int(self.battery / "capacity")
+
+        if capacity is not None:
+            return capacity
+
+        charge_now = read_int(self.battery / "charge_now")
+        charge_full = read_int(self.battery / "charge_full")
+
+        if charge_now is not None and charge_full:
+            return charge_now / charge_full * 100
+
+        energy_now = read_int(self.battery / "energy_now")
+        energy_full = read_int(self.battery / "energy_full")
+
+        if energy_now is not None and energy_full:
+            return energy_now / energy_full * 100
+
+        return None
+
+    def on_ac(self):
+        if not self.battery:
+            return True
+
+        status = self.battery_status().lower()
+
+        return status in (
+            "charging",
+            "full",
+            "not charging",
+        )
+
+    def battery_watts(self):
+        if not self.battery:
+            return None
+
+        voltage = read_int(self.battery / "voltage_now")
+
+        if voltage is None:
+            voltage = read_int(self.battery / "voltage_min_design")
+
+        current = read_int(self.battery / "current_now")
+
+        if voltage is None or current is None:
+            return None
+
+        return (voltage / 1_000_000) * (current / 1_000_000)
+
+    def battery_energy_watts(self):
+        if not self.battery:
+            return None
+
+        voltage = read_int(self.battery / "voltage_now")
+        current = read_int(self.battery / "current_now")
+
+        if voltage is None or current is None:
+            return None
+
+        return voltage * current / 1_000_000_000_000
+
+
+# ─────────────────────────────────────────────────────────────
+# GPU detection
+# ─────────────────────────────────────────────────────────────
+
+
+class GPU:
+    def __init__(self):
+        self.gpus = self.detect()
+
+    def detect(self):
+        found = []
+
+        for card in DRM.glob("card[0-9]"):
+            device = card / "device"
+
+            vendor = read_file(device / "vendor")
+
+            if vendor is None:
+                continue
+
+            pci_id = vendor.lower()
+
+            if pci_id == "0x10de":
+                vendor_name = "NVIDIA"
+            elif pci_id == "0x1002":
+                vendor_name = "AMD"
+            elif pci_id == "0x8086":
+                vendor_name = "Intel"
+            else:
+                vendor_name = f"GPU ({pci_id})"
+
+            device_id = read_file(device / "device")
+
+            runtime = read_file(device / "power" / "runtime_status")
+
+            control = read_file(device / "power" / "control")
+
+            found.append(
+                {
+                    "card": card.name,
+                    "vendor": vendor_name,
+                    "device": device_id,
+                    "runtime": runtime or "unknown",
+                    "control": control or "unknown",
+                }
+            )
+
+        return found
+
+    def nvidia_power(self, allow_query):
+        """
+        IMPORTANT:
+
+        nvidia-smi can wake an NVIDIA GPU.
+
+        Therefore we NEVER call it on battery.
+
+        On AC it is safe to query because the user explicitly wants
+        the dGPU available for gaming.
+        """
+
+        if not allow_query:
+            return None
+
+        if not command_exists("nvidia-smi"):
+            return None
+
+        output = run_command(
+            [
+                "nvidia-smi",
+                "--query-gpu=power.draw",
+                "--format=csv,noheader,nounits",
+            ]
+        )
+
+        if not output:
+            return None
+
+        try:
+            return float(output.splitlines()[0].strip())
+        except (ValueError, IndexError):
+            return None
+
+
+# ─────────────────────────────────────────────────────────────
+# System information
+# ─────────────────────────────────────────────────────────────
+
+
+class System:
+    def __init__(self):
+        self.cpu = CPU()
+        self.ram = RAM()
+        self.power = Power()
+        self.gpu = GPU()
+
+        self.hostname = os.uname().nodename
+
+    def collect(self):
+        on_ac = self.power.on_ac()
+
+        battery = self.power.battery_percent()
+        battery_watts = self.power.battery_watts()
+
+        gpu_power = self.gpu.nvidia_power(allow_query=on_ac)
+
+        used_ram, total_ram, ram_percent = self.ram.read()
+
+        return {
+            "cpu": self.cpu.usage(),
+            "cpu_temp": self.cpu.temperature(),
+            "ram_used": used_ram,
+            "ram_total": total_ram,
+            "ram_percent": ram_percent,
+            "battery": battery,
+            "battery_watts": battery_watts,
+            "battery_status": self.power.battery_status(),
+            "on_ac": on_ac,
+            "gpu_power": gpu_power,
+            "gpus": self.gpu.gpus,
+            "hostname": self.hostname,
+        }
+
+
+# ─────────────────────────────────────────────────────────────
+# Formatting
+# ─────────────────────────────────────────────────────────────
+
+
+def bytes_gib(value):
+    if value is None:
+        return 0
+
+    return value / (1024**3)
+
+
+def bar(percent, width=24):
+    percent = max(0, min(100, percent))
+
+    filled = int(width * percent / 100)
+
+    return "[" + "█" * filled + "░" * (width - filled) + "]"
+
+
+def fmt_temp(value):
+    if value is None:
+        return "N/A"
+
+    return f"{value:.0f} °C"
+
+
+def fmt_power(value):
+    if value is None:
+        return "N/A"
+
+    return f"{value:.2f} W"
+
+
+# ─────────────────────────────────────────────────────────────
+# Drawing
+# ─────────────────────────────────────────────────────────────
+
+
+def safe_addstr(win, y, x, text, attr=0):
+    try:
+        win.addstr(y, x, text, attr)
+    except curses.error:
+        pass
+
+
+def box_title(win, y, x, width, title):
+    safe_addstr(
+        win,
+        y,
+        x + 2,
+        f" {title} ",
+        curses.color_pair(3) | curses.A_BOLD,
+    )
+
+
+def draw_box(win, y, x, h, w, title):
+    try:
+        win.attron(curses.color_pair(2))
+
+        win.addch(y, x, curses.ACS_ULCORNER)
+        win.hline(y, x + 1, curses.ACS_HLINE, w - 2)
+        win.addch(y, x + w - 1, curses.ACS_URCORNER)
+
+        win.vline(y + 1, x, curses.ACS_VLINE, h - 2)
+        win.vline(y + 1, x + w - 1, curses.ACS_VLINE, h - 2)
+
+        win.addch(y + h - 1, x, curses.ACS_LLCORNER)
+        win.hline(y + h - 1, x + 1, curses.ACS_HLINE, w - 2)
+        win.addch(y + h - 1, x + w - 1, curses.ACS_LRCORNER)
+
+        win.attroff(curses.color_pair(2))
+
+        box_title(win, y, x, w, title)
+
+    except curses.error:
+        pass
+
+
+def draw_system(stdscr, system, data):
+    stdscr.erase()
+
+    height, width = stdscr.getmaxyx()
+
+    if height < 20 or width < 70:
+        safe_addstr(
+            stdscr,
+            1,
+            2,
+            f"Terminal too small: {width}x{height}",
+            curses.A_BOLD,
+        )
+        safe_addstr(
+            stdscr,
+            3,
+            2,
+            "Resize the terminal.",
+        )
+        stdscr.refresh()
+        return
+
+    # ───────── Header ─────────
+
+    safe_addstr(
+        stdscr,
+        0,
+        2,
+        "POWER TUI",
+        curses.color_pair(1) | curses.A_BOLD,
+    )
+
+    safe_addstr(
+        stdscr,
+        0,
+        width - min(24, width - 3),
+        system.hostname[:20],
+        curses.color_pair(4),
+    )
+
+    # ───────── Layout ─────────
+
+    left = 2
+    right = width // 2 + 1
+
+    box_width = width // 2 - 3
+
+    if box_width < 30:
+        box_width = 30
+
+    # CPU
+    draw_box(
+        stdscr,
+        2,
+        left,
+        8,
+        box_width,
+        "CPU",
+    )
+
+    safe_addstr(
+        stdscr,
+        4,
+        left + 3,
+        f"Usage     {data['cpu']:6.1f} %",
+    )
+
+    safe_addstr(
+        stdscr,
+        5,
+        left + 3,
+        bar(data["cpu"], box_width - 8),
+    )
+
+    safe_addstr(
+        stdscr,
+        6,
+        left + 3,
+        f"Temp      {fmt_temp(data['cpu_temp'])}",
+    )
+
+    # RAM
+    draw_box(
+        stdscr,
+        11,
+        left,
+        8,
+        box_width,
+        "MEMORY",
+    )
+
+    safe_addstr(
+        stdscr,
+        13,
+        left + 3,
+        f"Used      {bytes_gib(data['ram_used']):6.2f} GiB",
+    )
+
+    safe_addstr(
+        stdscr,
+        14,
+        left + 3,
+        f"Total     {bytes_gib(data['ram_total']):6.2f} GiB",
+    )
+
+    safe_addstr(
+        stdscr,
+        15,
+        left + 3,
+        f"Usage     {data['ram_percent']:6.1f} %",
+    )
+
+    safe_addstr(
+        stdscr,
+        16,
+        left + 3,
+        bar(data["ram_percent"], box_width - 8),
+    )
+
+    # Power
+    draw_box(
+        stdscr,
+        2,
+        right,
+        8,
+        box_width,
+        "POWER",
+    )
+
+    if data["on_ac"]:
+        source = "AC / CHARGER"
+        source_attr = curses.color_pair(1) | curses.A_BOLD
+    else:
+        source = "BATTERY"
+        source_attr = curses.color_pair(5) | curses.A_BOLD
+
+    safe_addstr(
+        stdscr,
+        4,
+        right + 3,
+        "Source    ",
+    )
+
+    safe_addstr(
+        stdscr,
+        4,
+        right + 13,
+        source,
+        source_attr,
+    )
+
+    if data["battery"] is not None:
+        safe_addstr(
+            stdscr,
+            5,
+            right + 3,
+            f"Battery   {data['battery']:6.1f} %",
+        )
+
+        safe_addstr(
+            stdscr,
+            6,
+            right + 3,
+            f"Status    {data['battery_status']}",
+        )
+
+    if data["battery_watts"] is not None:
+        safe_addstr(
+            stdscr,
+            7,
+            right + 3,
+            f"Battery   {data['battery_watts']:6.2f} W",
+        )
+
+    # GPU
+    draw_box(
+        stdscr,
+        11,
+        right,
+        8,
+        box_width,
+        "GRAPHICS",
+    )
+
+    row = 13
+
+    for gpu in data["gpus"][:3]:
+        safe_addstr(
+            stdscr,
+            row,
+            right + 3,
+            f"{gpu['vendor']:<9}",
+            curses.A_BOLD,
+        )
+
+        status = gpu["runtime"]
+
+        if status == "suspended":
+            attr = curses.color_pair(1)
+        elif status == "active":
+            attr = curses.color_pair(5)
+        else:
+            attr = 0
+
+        safe_addstr(
+            stdscr,
+            row,
+            right + 14,
+            status,
+            attr,
+        )
+
+        row += 1
+
+    if data["gpu_power"] is not None:
+        safe_addstr(
+            stdscr,
+            row,
+            right + 3,
+            f"NVIDIA power  {data['gpu_power']:.2f} W",
+        )
+        row += 1
+    elif not data["on_ac"]:
+        safe_addstr(
+            stdscr,
+            row,
+            right + 3,
+            "NVIDIA power  blocked on battery",
+            curses.color_pair(5),
+        )
+
+    # ───────── Footer ─────────
+
+    footer_y = height - 2
+
+    safe_addstr(
+        stdscr,
+        footer_y,
+        2,
+        "q",
+        curses.color_pair(1) | curses.A_BOLD,
+    )
+
+    safe_addstr(
+        stdscr,
+        footer_y,
+        4,
+        "quit",
+    )
+
+    safe_addstr(
+        stdscr,
+        footer_y,
+        14,
+        "r",
+        curses.color_pair(1) | curses.A_BOLD,
+    )
+
+    safe_addstr(
+        stdscr,
+        footer_y,
+        16,
+        "refresh",
+    )
+
+    safe_addstr(
+        stdscr,
+        footer_y,
+        width - 22,
+        "updates every 1s",
+        curses.color_pair(4),
+    )
+
+    stdscr.refresh()
+
+
+# ─────────────────────────────────────────────────────────────
+# Main
+# ─────────────────────────────────────────────────────────────
+
+
+def setup_colors():
+    curses.start_color()
+    curses.use_default_colors()
+
+    # 1 = good / active
+    curses.init_pair(1, curses.COLOR_GREEN, -1)
+
+    # 2 = border
+    curses.init_pair(2, curses.COLOR_CYAN, -1)
+
+    # 3 = title
+    curses.init_pair(3, curses.COLOR_YELLOW, -1)
+
+    # 4 = secondary
+    curses.init_pair(4, curses.COLOR_BLUE, -1)
+
+    # 5 = warning / battery
+    curses.init_pair(5, curses.COLOR_RED, -1)
+
+
+def main(stdscr):
+    curses.curs_set(0)
+    stdscr.nodelay(True)
+    stdscr.timeout(250)
+
+    setup_colors()
+
+    system = System()
+
+    last_update = 0
+
+    while True:
+        now = time.monotonic()
+
+        if now - last_update >= 1.0:
+            data = system.collect()
+            draw_system(stdscr, system, data)
+            last_update = now
+
+        key = stdscr.getch()
+
+        if key in (ord("q"), ord("Q"), 27):
+            break
+
+        if key in (ord("r"), ord("R")):
+            system = System()
+            last_update = 0
+
+        time.sleep(0.02)
+
+
+if __name__ == "__main__":
+    try:
+        curses.wrapper(main)
+    except KeyboardInterrupt:
+        pass
