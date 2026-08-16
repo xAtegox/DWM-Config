@@ -132,8 +132,8 @@ static const Key keys[] = {
     {MODKEY | ShiftMask,                 XK_i,            incnmaster,       {.i = +1}},          // Increrase master windows
     {MODKEY | ControlMask,               XK_i,            incnmaster,       {.i = -1}},          // Decrerase Master windows
     {MODKEY,                             XK_Tab,          view,             {0}},                // Swap between 2 last visited tabs
-    {MODKEY,                             XK_h,            movecorner,       {.f = -0.05}},       // maximalist: prev corner / tiling: decrerase master area
-    {MODKEY,                             XK_l,            movecorner,       {.f = +0.05}},       // maximalist: next corner / tiling: increrase master area
+    {MODKEY,                             XK_h,            setmfact,         {.f = -0.05}},       // decrerase master area
+    {MODKEY,                             XK_l,            setmfact,         {.f = +0.05}},       // increrase master area
     {MODKEY,                             XK_0,            view,             {.ui = ~0}},         // View All Tags
     {MODKEY | ShiftMask,                 XK_0,            tag,              {.ui = ~0}},         // View All Tags
     {MODKEY | ControlMask | ShiftMask,   XK_q,            quit,             {1}},                // Refresh Dwm

@@ -133,6 +133,7 @@ struct Client { /* a window that dwm is managing */
 	int alwaysbelow; /* if 1, never raised — always stacked behind other windows */
 	int nofocus; /* if 1, clicking still reaches the app but dwm never treats it as focused */
 	int nofullscreen; /* if 1, this client can never be fullscreened */
+	int cornerpos; /* which position movecorner() last snapped this client to: 0=TL 1=TR 2=right-center 3=BR 4=BL 5=left-center */
 	int initx, inity, initw, inith; /* geometry as originally requested at manage()-time, before dwm's own layout touches it — used to restore proper position/size for windows floated late via maybefloat() */
 	pid_t pid; /* pid of application in window - useful for swallowing */
 	Client *next; /* next client, in the linked list of all clients */
@@ -280,6 +281,7 @@ static void setfullscreen(Client *c, int fullscreen);
 static void setsticky(Client *c, int sticky);
 static void setlayout(const Arg *arg);
 static void setmfact(const Arg *arg);
+static void movecorner(const Arg *arg);
 static void setup(void);
 static void seturgent(Client *c, int urg);
 static void showhide(Client *c);
@@ -2290,6 +2292,56 @@ setmfact(const Arg *arg)
 		return;
 	selmon->mfact = f;
 	arrange(selmon);
+}
+
+void
+movecorner(const Arg *arg)
+{
+	Client *c = selmon->sel;
+	Monitor *m;
+	int x, y, topmargin;
+	const int dockclear = 67; /* dockapp column width + margin, kept clear of on the right edge only */
+
+	if (!maximalistmode || !c || c->isfullscreen) {
+		setmfact(arg); /* outside Maximalist Mode this key still resizes the master area as normal */
+		return;
+	}
+
+	m = c->mon;
+	/* top positions need at least the notch's own height + border clearance,
+	 * not just the usual gap, or the notch itself clips off the screen edge */
+	topmargin = MAX((int)gappov, bh + 2 * (int)maximalistborderpx);
+	c->cornerpos = MOD(c->cornerpos + (arg->f > 0 ? 1 : -1), 6);
+
+	switch (c->cornerpos) {
+	case 0: /* top-left */
+		x = m->wx + gappoh;
+		y = m->wy + topmargin;
+		break;
+	case 1: /* top-right */
+		x = m->wx + m->ww - (int)WIDTH(c) - gappoh - dockclear;
+		y = m->wy + topmargin;
+		break;
+	case 2: /* right-center */
+		x = m->wx + m->ww - (int)WIDTH(c) - gappoh - dockclear;
+		y = m->wy + (m->wh - (int)HEIGHT(c)) / 2;
+		break;
+	case 3: /* bottom-right */
+		x = m->wx + m->ww - (int)WIDTH(c) - gappoh - dockclear;
+		y = m->wy + m->wh - (int)HEIGHT(c) - gappov;
+		break;
+	case 4: /* bottom-left */
+		x = m->wx + gappoh;
+		y = m->wy + m->wh - (int)HEIGHT(c) - gappov;
+		break;
+	default: /* 5: left-center */
+		x = m->wx + gappoh;
+		y = m->wy + (m->wh - (int)HEIGHT(c)) / 2;
+		break;
+	}
+
+	resize(c, x, y, c->w, c->h, 0);
+	ensurenotchroom(c); /* safety net, in case topmargin still isn't enough for an unusually tall window */
 }
 
 void
