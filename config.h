@@ -5,6 +5,7 @@
 /* ---------------------------- appearance --------------------------------- */
 static unsigned int borderpx = 1;              // window border pixel width
 static const unsigned int maximalistborderpx = 2; // border width used in Maximalist Mode
+static const int dockclearance = 67; // Width reserved on the right edge for the dockapp column while Maximalist Mode is on
 static unsigned int snap = 3;                  // distance to screen edge where windows snap
 static const unsigned int gappih = 20;         // horizontal gap between windows (inner)
 static const unsigned int gappiv = 20;         // vertical gap between windows (inner)
@@ -171,7 +172,7 @@ static const Key keys[] = {
     {MODKEY,                           XK_b,     spawn, {.v = (const char *[]) {"helium-browser", NULL}}}, // Browser
     {MODKEY,                           XK_d,     spawn, {.v = (const char *[]) {"vesktop", NULL}}}, // Vesktop
     {MODKEY,                           XK_e,     spawn, {.v = (const char *[]) {"emacsclient", "-c", NULL}}}, // Emacs Client
-    {MODKEY | ShiftMask,               XK_e,     spawn, SHCMD("emacsclient -c -F '((name . \"Emacs Client\") (title . \"Emacs Client\") (width . 100) (height . 53))'") }, // Bigger Floating Emacs Client
+    {MODKEY | ShiftMask,               XK_e,     spawn, SHCMD("emacsclient -c -F '((name . \"Emacs Client\") (title . \"Emacs Client\") (width . 110) (height . 53))'") }, // Bigger Floating Emacs Client
     {MODKEY | ControlMask,             XK_e,     spawn, SHCMD("emacsclient --eval '(emacs-everywhere)'")}, // Emacs Everywhere
     {MODKEY | ShiftMask,               XK_b,     spawn, {.v = (const char *[]) {"kitty", "-e", "btop", NULL}}}, // Kitty Btop Terminal
     {MODKEY,                           XK_c,     spawn, {.v = (const char *[]) {HOME "/.config/scripts/custom-helpers/cal-check", NULL}}}, // Custom Calendar Check

@@ -2300,7 +2300,6 @@ movecorner(const Arg *arg)
 	Client *c = selmon->sel;
 	Monitor *m;
 	int x, y, topmargin;
-	const int dockclear = 67; /* dockapp column width + margin, kept clear of on the right edge only */
 
 	if (!maximalistmode || !c || c->isfullscreen) {
 		setmfact(arg); /* outside Maximalist Mode this key still resizes the master area as normal */
@@ -2308,9 +2307,9 @@ movecorner(const Arg *arg)
 	}
 
 	m = c->mon;
-	/* top positions need at least the notch's own height + border clearance,
-	 * not just the usual gap, or the notch itself clips off the screen edge */
-	topmargin = MAX((int)gappov, bh + 2 * (int)maximalistborderpx);
+	/* top positions need the usual gap ABOVE the notch, plus the notch's own
+	 * height+border on top of that — these stack, they aren't alternatives */
+	topmargin = (int)gappov + bh + 2 * (int)maximalistborderpx;
 	c->cornerpos = MOD(c->cornerpos + (arg->f > 0 ? 1 : -1), 6);
 
 	switch (c->cornerpos) {
@@ -2319,15 +2318,15 @@ movecorner(const Arg *arg)
 		y = m->wy + topmargin;
 		break;
 	case 1: /* top-right */
-		x = m->wx + m->ww - (int)WIDTH(c) - gappoh - dockclear;
+		x = m->wx + m->ww - (int)WIDTH(c) - gappoh - dockclearance;
 		y = m->wy + topmargin;
 		break;
 	case 2: /* right-center */
-		x = m->wx + m->ww - (int)WIDTH(c) - gappoh - dockclear;
+		x = m->wx + m->ww - (int)WIDTH(c) - gappoh - dockclearance;
 		y = m->wy + (m->wh - (int)HEIGHT(c)) / 2;
 		break;
 	case 3: /* bottom-right */
-		x = m->wx + m->ww - (int)WIDTH(c) - gappoh - dockclear;
+		x = m->wx + m->ww - (int)WIDTH(c) - gappoh - dockclearance;
 		y = m->wy + m->wh - (int)HEIGHT(c) - gappov;
 		break;
 	case 4: /* bottom-left */
