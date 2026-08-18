@@ -6,6 +6,7 @@
 static unsigned int borderpx = 1;              // window border pixel width
 static const unsigned int maximalistborderpx = 2; // border width used in Maximalist Mode
 static const int dockclearance = 67; // Width reserved on the right edge for the dockapp column while Maximalist Mode is on
+static const double maximalistresizestep = 0.25; // Percentage (as decimal) resizemaximalist() grows/shrinks the focused window by in Maximalist Mode
 static unsigned int snap = 3;                  // distance to screen edge where windows snap
 static const unsigned int gappih = 20;         // horizontal gap between windows (inner)
 static const unsigned int gappiv = 20;         // vertical gap between windows (inner)
@@ -53,6 +54,7 @@ static char *colors[][3] = {
 #define HOME       "/home/atego"  // easy way to change who owns some configs (keybinds)
 #define MODKEY     Mod4Mask       // Windows key
 #define SHCMD(cmd) { .v = (const char*[]){ "/bin/sh", "-c", cmd, NULL } }
+static const char maximaliststatefile[] = HOME "/.cache/dwm/maximalist_state"; // stores Maximalist Mode on/off so it survives reboots, not just dwm restarts
 
 /* ---------------------------- tags ---------------------------------------- */
 static const char *tags[] = {"1", "2", "3", "4", "5", "6", "7", "8", "9"};
@@ -135,6 +137,8 @@ static const Key keys[] = {
     {MODKEY,                             XK_Tab,          view,             {0}},                // Swap between 2 last visited tabs
     {MODKEY,                             XK_h,            movecorner,       {.f = -0.05}},       // maximalist: prev corner / tiling: decrerase master area
     {MODKEY,                             XK_l,            movecorner,       {.f = +0.05}},       // maximalist: next corner / tiling: increrase master area
+    {MODKEY | ShiftMask,                 XK_m,            resizemaximalist, {.f = +1}},          // maximalist: grow focused window by maximalistresizestep
+    {MODKEY | ControlMask,               XK_m,            resizemaximalist, {.f = -1}},          // maximalist: shrink focused window by maximalistresizestep
     {MODKEY,                             XK_0,            view,             {.ui = ~0}},         // View All Tags
     {MODKEY | ShiftMask,                 XK_0,            tag,              {.ui = ~0}},         // View All Tags
     {MODKEY | ControlMask | ShiftMask,   XK_q,            quit,             {1}},                // Refresh Dwm
@@ -143,7 +147,7 @@ static const Key keys[] = {
     {MODKEY | ShiftMask,                 XK_q,            killclient,       {.ui = 1}},          // Kill unfocused windows
     {MODKEY | ControlMask,               XK_x,            xrdb,             {.v = NULL}},        // Refresh Xrdb Colours, DO NOT CHANGE
     {MODKEY,                             XK_f,            togglefullscreen, {0}},                // Toggle Fulscreen
-    {MODKEY | ShiftMask,                 XK_m,            togglemaximalist, {0}},                // Toggle Maximalist Mode (WindowMaker Mode)
+    {MODKEY | ControlMask | ShiftMask,   XK_m,            togglemaximalist, {0}},                // Toggle Maximalist Mode (WindowMaker Mode)
 //  {MODKEY,                             XK_k,            setlayout,        {.v = &layouts[1]}}, // Tile Layout
 //  {MODKEY | ShiftMask | ControlMask,   XK_k,            setlayout,        {.v = &layouts[2]}}, // Monocle Layout
 //  {MODKEY | ShiftMask,                 XK_k,            setlayout,        {.v = &layouts[3]}}, // Spiral Layout

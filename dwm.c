@@ -29,6 +29,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/types.h>
+#include <sys/stat.h>
 #include <sys/wait.h>
 #include <X11/cursorfont.h>
 #include <X11/keysym.h>
@@ -282,6 +283,7 @@ static void setsticky(Client *c, int sticky);
 static void setlayout(const Arg *arg);
 static void setmfact(const Arg *arg);
 static void movecorner(const Arg *arg);
+static void resizemaximalist(const Arg *arg);
 static void setup(void);
 static void seturgent(Client *c, int urg);
 static void showhide(Client *c);
@@ -304,6 +306,8 @@ static void togglemaximalist(const Arg *arg);
 static void spawnmaximalist(void);
 static void killmaximalist(void);
 static void restoremaximalist(void);
+static void savemaximaliststate(void);
+static void mkdirp(char *path);
 static void restoreviewtags(void);
 static void togglesticky(const Arg *arg);
 static void toggleshade(Client *c);
@@ -379,7 +383,6 @@ static Display *dpy;
 static Drw *drw;
 static Monitor *mons, *selmon;
 static Window root, wmcheckwin;
-static Atom maximalistatom;
 static Atom tagsatom;
 static Atom viewtagatom;
 static int maximalistmode = 0;
@@ -2344,6 +2347,37 @@ movecorner(const Arg *arg)
 }
 
 void
+resizemaximalist(const Arg *arg)
+{
+	Client *c = selmon->sel;
+	Monitor *m;
+	int neww, newh, newx, newy, maxw, maxh, topmargin;
+	double factor;
+
+	if (!maximalistmode || !c || c->isfullscreen)
+		return;
+
+	m = c->mon;
+	topmargin = gappov + bh + 2 * (int)maximalistborderpx;
+	factor = 1.0 + (arg->f > 0 ? maximalistresizestep : -maximalistresizestep);
+
+	maxw = m->ww - 2 * gappoh - dockclearance;
+	maxh = m->wh - topmargin - gappov;
+
+	neww = MAX((int)(c->w * factor), 1);
+	newh = MAX((int)(c->h * factor), 1);
+	neww = MIN(neww, MAX(maxw, 1));
+	newh = MIN(newh, MAX(maxh, 1));
+
+	/* re-center within the usable area (monitor minus dock column/notch margin) */
+	newx = m->wx + (m->ww - dockclearance - neww) / 2;
+	newy = m->wy + topmargin + (maxh - newh) / 2;
+
+	resize(c, newx, newy, neww, newh, 0);
+	ensurenotchroom(c); /* safety net, same as movecorner() */
+}
+
+void
 setup(void)
 {
 	int i;
@@ -2382,7 +2416,6 @@ setup(void)
 	wmatom[WMDelete] = XInternAtom(dpy, "WM_DELETE_WINDOW", False);
 	wmatom[WMState] = XInternAtom(dpy, "WM_STATE", False);
 	wmatom[WMTakeFocus] = XInternAtom(dpy, "WM_TAKE_FOCUS", False);
-	maximalistatom = XInternAtom(dpy, "_DWM_MAXIMALIST", False);
 	tagsatom = XInternAtom(dpy, "_DWM_TAGS", False);
 	viewtagatom = XInternAtom(dpy, "_DWM_VIEWTAG", False);
 	netatom[NetActiveWindow] = XInternAtom(dpy, "_NET_ACTIVE_WINDOW", False);
@@ -2757,12 +2790,9 @@ togglemaximalist(const Arg *arg)
 	Client *c;
 	Monitor *m;
 	XWindowChanges wc;
-	long data;
 
 	maximalistmode = !maximalistmode;
-	data = maximalistmode;
-	XChangeProperty(dpy, root, maximalistatom, XA_CARDINAL, 32,
-		PropModeReplace, (unsigned char *)&data, 1);
+	savemaximaliststate();
 	if (maximalistmode)
 		spawnmaximalist();
 	else
@@ -2780,8 +2810,25 @@ togglemaximalist(const Arg *arg)
 				c->isfloating = 1;
 				c->premaxbw = c->bw;
 				c->bw = 0;
+				if (!c->wasfloating) {
+					/* was tiled: keeps its tiled geometry now that it's floating,
+					 * which can run under the dockapp column on the right edge.
+					 * clamp it clear of that column, shrinking/re-anchoring if needed. */
+					int maxx = m->wx + m->ww - dockclearance - gappoh;
+					if (c->x + (int)WIDTH(c) > maxx) {
+						int neww = maxx - c->x;
+						int newx = c->x;
+						if (neww < 1) {
+							neww = MAX(maxx - (m->wx + gappoh), 1);
+							newx = m->wx + gappoh;
+						}
+						resize(c, newx, c->y, neww, c->h, 0);
+					}
+				}
 			} else {
-				c->isfloating = c->wasfloating;
+				/* stays floating on the way back to normal mode instead of
+				 * reverting to tiled, even if it was tiled before maximalist mode */
+				c->isfloating = 1;
 				c->bw = c->premaxbw;
 			}
 			wc.border_width = c->bw;
@@ -2847,19 +2894,51 @@ killmaximalist(void)
 }
 
 void
+mkdirp(char *path)
+{
+	char *p;
+
+	for (p = path + 1; *p; p++) {
+		if (*p != '/')
+			continue;
+		*p = '\0';
+		mkdir(path, 0755); /* best-effort: ignore EEXIST/errors at each level */
+		*p = '/';
+	}
+	mkdir(path, 0755);
+}
+
+void
+savemaximaliststate(void)
+{
+	char dir[512];
+	char *slash;
+	FILE *f;
+
+	strncpy(dir, maximaliststatefile, sizeof dir - 1);
+	dir[sizeof dir - 1] = '\0';
+	if ((slash = strrchr(dir, '/')))
+		*slash = '\0';
+	mkdirp(dir); /* best-effort, walks and creates every missing path component; fopen below is the real check */
+
+	if ((f = fopen(maximaliststatefile, "w"))) {
+		fprintf(f, "%d\n", maximalistmode);
+		fclose(f);
+	}
+}
+
+void
 restoremaximalist(void)
 {
-	Atom type;
-	int format;
-	unsigned long nitems, extra;
-	unsigned char *data = NULL;
+	FILE *f;
+	int state = 0;
 
-	if (XGetWindowProperty(dpy, root, maximalistatom, 0, 1, False, XA_CARDINAL,
-		&type, &format, &nitems, &extra, &data) == Success && data) {
-		if (nitems && *(long *)data)
-			togglemaximalist(NULL); /* was on before the last restart: flip back on, same as a manual toggle */
-		XFree(data);
+	if ((f = fopen(maximaliststatefile, "r"))) {
+		fscanf(f, "%d", &state);
+		fclose(f);
 	}
+	if (state)
+		togglemaximalist(NULL); /* was on before the last restart/reboot: flip back on, same as a manual toggle */
 }
 
 void
