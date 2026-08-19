@@ -134,7 +134,7 @@ struct Client { /* a window that dwm is managing */
 	int alwaysbelow; /* if 1, never raised — always stacked behind other windows */
 	int nofocus; /* if 1, clicking still reaches the app but dwm never treats it as focused */
 	int nofullscreen; /* if 1, this client can never be fullscreened */
-	int cornerpos; /* which position movecorner() last snapped this client to: 0=TL 1=TR 2=right-center 3=BR 4=BL 5=left-center */
+	int cornerpos; /* which position movecorner() last snapped this client to: 0=TL 1=TR 2=right-center 3=BR 4=BL 5=left-center 6=center */
 	int initx, inity, initw, inith; /* geometry as originally requested at manage()-time, before dwm's own layout touches it — used to restore proper position/size for windows floated late via maybefloat() */
 	pid_t pid; /* pid of application in window - useful for swallowing */
 	Client *next; /* next client, in the linked list of all clients */
@@ -961,7 +961,7 @@ configurerequest(XEvent *e)
 				configure(c);
 			if (ISVISIBLE(c))
 				XMoveResizeWindow(dpy, c->win, c->x, c->y, c->w, c->h);
-			updatenotchpos(c); /* this path bypasses resizeclient() entirely, so the notch needs its own explicit sync here */
+			ensurenotchroom(c); /* clamps clear of the notch's space and syncs its position; a late ConfigureRequest (common right after a window spawns) bypasses resizeclient() entirely, so this path needs its own explicit call */
 		} else
 			configure(c);
 	} else {
@@ -1847,6 +1847,11 @@ movemouse(const Arg *arg)
 				ny = selmon->wy;
 			else if (abs((selmon->wy + selmon->wh) - (ny + HEIGHT(c))) < snap)
 				ny = selmon->wy + selmon->wh - HEIGHT(c);
+			if (maximalistmode && c->twin && !c->isfullscreen) {
+				int notchminy = c->mon->my + bh + 2 * (int)maximalistborderpx;
+				if (ny < notchminy) /* keep the notch itself from being dragged off the top of the screen */
+					ny = notchminy;
+			}
 			if (!c->isfloating && selmon->lt[selmon->sellt]->arrange
 			&& (abs(nx - c->x) > snap || abs(ny - c->y) > snap))
 				togglefloating(NULL);
@@ -2103,8 +2108,11 @@ restack(Monitor *m)
 	if (m->sel->isfloating || !m->lt[m->sellt]->arrange) {
 		if (m->sel->alwaysbelow)
 			XLowerWindow(dpy, m->sel->win);
-		else
+		else {
 			XRaiseWindow(dpy, m->sel->win);
+			if (m->sel->twin)
+				XRaiseWindow(dpy, m->sel->twin); /* keep the focused window's notch on top too, not just the window itself */
+		}
 	}
 	if (m->lt[m->sellt]->arrange) {
 		wc.stack_mode = Below;
@@ -2245,6 +2253,8 @@ setfullscreen(Client *c, int fullscreen)
 		c->w = c->oldw;
 		c->h = c->oldh;
 		resizeclient(c, c->x, c->y, c->w, c->h);
+		if (c->twin) /* notch content is stale from being hidden behind the fullscreen window; resizeclient()'s redraw only fires when width changed, which it usually hasn't here */
+			drawnotch(c);
 		arrange(c->mon);
 	}
 }
@@ -2313,7 +2323,7 @@ movecorner(const Arg *arg)
 	/* top positions need the usual gap ABOVE the notch, plus the notch's own
 	 * height+border on top of that — these stack, they aren't alternatives */
 	topmargin = (int)gappov + bh + 2 * (int)maximalistborderpx;
-	c->cornerpos = MOD(c->cornerpos + (arg->f > 0 ? 1 : -1), 6);
+	c->cornerpos = MOD(c->cornerpos + (arg->f > 0 ? 1 : -1), 7);
 
 	switch (c->cornerpos) {
 	case 0: /* top-left */
@@ -2336,9 +2346,13 @@ movecorner(const Arg *arg)
 		x = m->wx + gappoh;
 		y = m->wy + m->wh - (int)HEIGHT(c) - gappov;
 		break;
-	default: /* 5: left-center */
+	case 5: /* left-center */
 		x = m->wx + gappoh;
 		y = m->wy + (m->wh - (int)HEIGHT(c)) / 2;
+		break;
+	default: /* 6: center */
+		x = m->wx + (m->ww - dockclearance - (int)WIDTH(c)) / 2;
+		y = m->wy + topmargin + (m->wh - topmargin - gappov - (int)HEIGHT(c)) / 2;
 		break;
 	}
 

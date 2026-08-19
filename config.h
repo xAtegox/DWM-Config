@@ -6,7 +6,7 @@
 static unsigned int borderpx = 1;              // window border pixel width
 static const unsigned int maximalistborderpx = 2; // border width used in Maximalist Mode
 static const int dockclearance = 67; // Width reserved on the right edge for the dockapp column while Maximalist Mode is on
-static const double maximalistresizestep = 0.25; // Percentage (as decimal) resizemaximalist() grows/shrinks the focused window by in Maximalist Mode
+static const double maximalistresizestep = 0.20; // Percentage (as decimal) resizemaximalist() grows/shrinks the focused window by in Maximalist Mode
 static unsigned int snap = 3;                  // distance to screen edge where windows snap
 static const unsigned int gappih = 20;         // horizontal gap between windows (inner)
 static const unsigned int gappiv = 20;         // vertical gap between windows (inner)
