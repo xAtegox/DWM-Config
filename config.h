@@ -316,6 +316,7 @@ static const Rule rules[] = {
     {"fzfmenu", NULL, NULL, 0, 1, 1, 1, -1},
     {"mpv", NULL, NULL, 0, 1, 0, 1, -1},
     {"Nsxiv", NULL, NULL, 0, 1, 0, 1, -1},
+    { .title = "WorldPainter*",      .isfloating = 1, .monitor = -1, .nomaximalist = 1, .nokill = 1, .alwayssticky = 1, .alwaysbelow = 1, .nofocus = 1, .nofullscreen = 1 },
         /* wminfo */
     { .class = "wminfo",      .isfloating = 1, .monitor = -1, .nomaximalist = 1, .nokill = 1, .alwayssticky = 1, .alwaysbelow = 1, .nofocus = 1, .nofullscreen = 1 },
     { .title = "wminfo",      .isfloating = 1, .monitor = -1, .nomaximalist = 1, .nokill = 1, .alwayssticky = 1, .alwaysbelow = 1, .nofocus = 1, .nofullscreen = 1 },
