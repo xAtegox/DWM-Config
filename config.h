@@ -139,6 +139,7 @@ static const Key keys[] = {
     {MODKEY,                             XK_l,            movecorner,       {.f = +0.05}},       // maximalist: next corner / tiling: increrase master area
     {MODKEY | ShiftMask,                 XK_m,            resizemaximalist, {.f = +1}},          // maximalist: grow focused window by maximalistresizestep
     {MODKEY | ControlMask,               XK_m,            resizemaximalist, {.f = -1}},          // maximalist: shrink focused window by maximalistresizestep
+    {MODKEY,                             XK_r,            keyshade, {0}}, // TOGGLE SHADE (rolls the notch up/down, same as double-clicking it)
     {MODKEY,                             XK_0,            view,             {.ui = ~0}},         // View All Tags
     {MODKEY | ShiftMask,                 XK_0,            tag,              {.ui = ~0}},         // View All Tags
     {MODKEY | ControlMask | ShiftMask,   XK_q,            quit,             {1}},                // Refresh Dwm
@@ -180,7 +181,6 @@ static const Key keys[] = {
     {MODKEY | ShiftMask,               XK_e,     spawn, SHCMD("emacsclient -c -F '((name . \"Emacs Client\") (title . \"Emacs Client\") (width . 110) (height . 53))'") }, // Bigger Floating Emacs Client
     {MODKEY | ControlMask,             XK_e,     spawn, SHCMD("emacsclient --eval '(emacs-everywhere)'")}, // Emacs Everywhere
     {MODKEY | ShiftMask,               XK_b,     spawn, {.v = (const char *[]) {"kitty", "-e", "ptui", NULL}}}, // Kitty Btop Terminal
-    {MODKEY,                           XK_c,     spawn, {.v = (const char *[]) {HOME "/.config/scripts/custom-helpers/cal-check", NULL}}}, // Custom Calendar Check
     {MODKEY | ShiftMask,               XK_f,     spawn, {.v = (const char *[]) {"nautilus", NULL}}}, // File Browser
     {MODKEY | ShiftMask,               XK_r,     spawn, {.v = (const char *[]) {HOME "/.config/scripts/audio-video/screenrecord", "toggle", NULL}}}, // Screen Recording Script
     {MODKEY | ShiftMask,               XK_w,     spawn, {.v = (const char *[]) {HOME "/.config/scripts/images-photos-wallpapers/gif-test", NULL}}}, // Custom Wallpaper Picker Script

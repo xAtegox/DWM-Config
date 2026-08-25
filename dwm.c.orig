@@ -311,7 +311,6 @@ static void mkdirp(char *path);
 static void restoreviewtags(void);
 static void togglesticky(const Arg *arg);
 static void toggleshade(Client *c);
-static void keyshade(const Arg *arg);
 static void toggletag(const Arg *arg);
 static void toggleview(const Arg *arg);
 static void unfocus(Client *c, int setfocus);
@@ -2789,13 +2788,6 @@ toggleshade(Client *c)
 	c->isshaded = !c->isshaded;
 	XMoveWindow(dpy, c->win, c->isshaded ? WIDTH(c) * -2 : c->x, c->y); /* parked off-screen, never unmapped */
 	XRaiseWindow(dpy, c->twin); /* stay reachable even if another window would otherwise stack over it */
-}
-
-void
-keyshade(const Arg *arg)
-{
-	if (selmon->sel)
-		toggleshade(selmon->sel); /* keybind equivalent of double-clicking the notch */
 }
 
 void
