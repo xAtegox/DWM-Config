@@ -69,7 +69,7 @@ static const char *tags[] = {"1", "2", "3", "4", "5", "6", "7", "8", "9"};
 #include "vanitygaps.c"
 #include <X11/XF86keysym.h>
 
-static const float mfact = 0.55;     // size of master area
+static const float mfact = 0.5;     // size of master area
 static const int nmaster = 1;        // number of clients in master area
 static const int resizehints = 1;
 static const int lockfullscreen = 0; // 1 = fullscreen can't be toggled off
