@@ -55,6 +55,7 @@ static char *colors[][3] = {
 #define MODKEY     Mod4Mask       // Windows key
 #define SHCMD(cmd) { .v = (const char*[]){ "/bin/sh", "-c", cmd, NULL } }
 static const char maximaliststatefile[] = HOME "/.cache/dwm/maximalist_state"; // stores Maximalist Mode on/off so it survives reboots, not just dwm restarts
+static const char focushoverstatefile[] = HOME "/.cache/dwm/focusonhover_state"; // stores the focus-on-hover setting so it survives reboots
 
 /* ---------------------------- tags ---------------------------------------- */
 static const char *tags[] = {"1", "2", "3", "4", "5", "6", "7", "8", "9"};
@@ -139,6 +140,7 @@ static const Key keys[] = {
     {MODKEY,                             XK_l,            movecorner,       {.f = +0.05}},       // maximalist: next corner / tiling: increrase master area
     {MODKEY | ShiftMask,                 XK_m,            resizemaximalist, {.f = +1}},          // maximalist: grow focused window by maximalistresizestep
     {MODKEY | ControlMask,               XK_m,            resizemaximalist, {.f = -1}},          // maximalist: shrink focused window by maximalistresizestep
+    {MODKEY | ControlMask | ShiftMask,   XK_f,            togglefocusonhover, {0}},               // Toggle focus-follows-hover on/off (persists across reboots)
     {MODKEY,                             XK_r,            keyshade, {0}}, // TOGGLE SHADE (rolls the notch up/down, same as double-clicking it)
     {MODKEY,                             XK_0,            view,             {.ui = ~0}},         // View All Tags
     {MODKEY | ShiftMask,                 XK_0,            tag,              {.ui = ~0}},         // View All Tags
@@ -187,7 +189,7 @@ static const Key keys[] = {
     {MODKEY | ControlMask | ShiftMask, XK_w,     spawn, {.v = (const char *[]) {"onlyoffice-desktopeditors", NULL}}}, // OnlyOffice 
     {MODKEY,                           XK_t,     spawn, {.v = (const char *[]) {HOME "/.config/scripts/system/toggle-kitty-opacity", NULL}}}, // System Transparency Toggle
     {MODKEY | ShiftMask,               XK_t,     spawn, {.v = (const char *[]) {HOME "/.config/scripts/system/trackpad-toggle", NULL}}}, // Trackpad Toggle
-    {MODKEY | ControlMask,             XK_j,     spawn, {.v = (const char *[]) {HOME "/.config/scripts/audio-video/cam.sh", "--view", NULL}}}, // Open Camera
+    {MODKEY,                           XK_c,     spawn, {.v = (const char *[]) {HOME "/.config/scripts/audio-video/cam.sh", "--view", NULL}}}, // Open Camera
     {MODKEY,                           XK_Shift_R, spawn, {.v = (const char *[]){HOME "/.config/scripts/system/powermenu", NULL}}}, // Power Menu Options
     {MODKEY,                           XK_BackSpace, spawn, {.v = (const char *[]){HOME "/.config/scripts/system/lock", NULL}}}, // Lockscreen
 

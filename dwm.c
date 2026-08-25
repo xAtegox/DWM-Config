@@ -135,6 +135,8 @@ struct Client { /* a window that dwm is managing */
 	int nofocus; /* if 1, clicking still reaches the app but dwm never treats it as focused */
 	int nofullscreen; /* if 1, this client can never be fullscreened */
 	int cornerpos; /* which position movecorner() last snapped this client to: 0=TL 1=TR 2=right-center 3=BR 4=BL 5=left-center 6=center */
+	int ismaximalistzoomed; /* if 1, togglefloating() has maximized this client in Maximalist Mode; zoomx/y/w/h hold the geometry to restore on the next press */
+	int zoomx, zoomy, zoomw, zoomh; /* geometry before the maximalist maximize toggle, kept separate from oldx/oldy/oldw/oldh which fullscreen already uses */
 	int initx, inity, initw, inith; /* geometry as originally requested at manage()-time, before dwm's own layout touches it — used to restore proper position/size for windows floated late via maybefloat() */
 	pid_t pid; /* pid of application in window - useful for swallowing */
 	Client *next; /* next client, in the linked list of all clients */
@@ -307,6 +309,9 @@ static void spawnmaximalist(void);
 static void killmaximalist(void);
 static void restoremaximalist(void);
 static void savemaximaliststate(void);
+static void togglefocusonhover(const Arg *arg);
+static void savefocushoverstate(void);
+static void restorefocushover(void);
 static void mkdirp(char *path);
 static void restoreviewtags(void);
 static void togglesticky(const Arg *arg);
@@ -387,6 +392,7 @@ static Window root, wmcheckwin;
 static Atom tagsatom;
 static Atom viewtagatom;
 static int maximalistmode = 0;
+static int focusonhover = 1; /* if 0, enternotify() tracks which monitor the pointer is on but never steals focus by hovering a window */
 static pid_t maximalistpid = -1;
 
 static xcb_connection_t *xcon;
@@ -1276,6 +1282,10 @@ enternotify(XEvent *e)
 		return;
 	c = wintoclient(ev->window);
 	m = c ? c->mon : wintomon(ev->window);
+	if (!focusonhover) {
+		selmon = m; /* still track which monitor the pointer is on, but never focus a window just by hovering it */
+		return;
+	}
 	if (m != selmon) {
 		unfocus(selmon->sel, 1);
 		selmon = m;
@@ -1320,13 +1330,7 @@ focus(Client *c)
 		XSetInputFocus(dpy, selmon->barwin, RevertToPointerRoot, CurrentTime);
 		XDeleteProperty(dpy, root, netatom[NetActiveWindow]);
 	}
-	if(selmon->sel && selmon->sel->isfullscreen){ /* if previous client was fullscreen, toggle off and then back for the new */
-		togglefullscreen(NULL);
-		selmon->sel = c;
-		togglefullscreen(NULL);
-	}else{
-		selmon->sel = c;
-	}
+	selmon->sel = c; /* fullscreen is per-window/per-tag: focus changes (including tag switches) no longer drag a fullscreen state onto the newly focused client */
 	drawbars(); /* redraw statusbar */
 	drawnotches();
 }
@@ -2761,14 +2765,41 @@ togglebarfloat(const Arg *arg)
 void
 togglefloating(const Arg *arg)
 {
-	if (!selmon->sel)
+	Client *c = selmon->sel;
+	Monitor *m;
+	int topmargin, maxw, maxh, newx, newy;
+
+	if (!c)
 		return;
-	if (selmon->sel->isfullscreen) /* no support for fullscreen windows */
+	if (c->isfullscreen) /* no support for fullscreen windows */
 		return;
-	selmon->sel->isfloating = !selmon->sel->isfloating || selmon->sel->isfixed;
-	if (selmon->sel->isfloating)
-		resize(selmon->sel, selmon->sel->x, selmon->sel->y,
-			selmon->sel->w, selmon->sel->h, 0);
+
+	if (maximalistmode && c->isfloating) { /* everything is float-forced in Maximalist Mode, so a plain float/unfloat toggle makes no sense here — use this bind as maximize/restore instead */
+		m = c->mon;
+		topmargin = (int)gappov + bh + 2 * (int)maximalistborderpx;
+		maxw = m->ww - 2 * (int)gappoh - dockclearance; /* leave the dock column clear on the right */
+		maxh = m->wh - topmargin - (int)gappov;
+		newx = m->wx + (int)gappoh;
+		newy = m->wy + topmargin;
+
+		if (c->ismaximalistzoomed) { /* already maximized: restore prior geometry */
+			resize(c, c->zoomx, c->zoomy, c->zoomw, c->zoomh, 0);
+			c->ismaximalistzoomed = 0;
+		} else { /* not maximized: save current geometry, then fill the usable area */
+			c->zoomx = c->x;
+			c->zoomy = c->y;
+			c->zoomw = c->w;
+			c->zoomh = c->h;
+			resize(c, newx, newy, MAX(maxw, 1), MAX(maxh, 1), 0);
+			c->ismaximalistzoomed = 1;
+		}
+		ensurenotchroom(c);
+		return;
+	}
+
+	c->isfloating = !c->isfloating || c->isfixed;
+	if (c->isfloating)
+		resize(c, c->x, c->y, c->w, c->h, 0);
 	arrange(selmon);
 }
 
@@ -2961,6 +2992,45 @@ restoremaximalist(void)
 	}
 	if (state)
 		togglemaximalist(NULL); /* was on before the last restart/reboot: flip back on, same as a manual toggle */
+}
+
+void
+togglefocusonhover(const Arg *arg)
+{
+	focusonhover = !focusonhover;
+	savefocushoverstate();
+}
+
+void
+savefocushoverstate(void)
+{
+	char dir[512];
+	char *slash;
+	FILE *f;
+
+	strncpy(dir, focushoverstatefile, sizeof dir - 1);
+	dir[sizeof dir - 1] = '\0';
+	if ((slash = strrchr(dir, '/')))
+		*slash = '\0';
+	mkdirp(dir); /* best-effort, walks and creates every missing path component; fopen below is the real check */
+
+	if ((f = fopen(focushoverstatefile, "w"))) {
+		fprintf(f, "%d\n", focusonhover);
+		fclose(f);
+	}
+}
+
+void
+restorefocushover(void)
+{
+	FILE *f;
+	int state = 1;
+
+	if ((f = fopen(focushoverstatefile, "r"))) {
+		fscanf(f, "%d", &state);
+		fclose(f);
+	}
+	focusonhover = state; /* defaults to on (1) if the state file doesn't exist yet */
 }
 
 void
@@ -3630,6 +3700,7 @@ main(int argc, char *argv[])
 #endif /* __OpenBSD__ */
 	scan(); /* see if other applications are already running */
 	restoremaximalist(); /* re-enable maximalist mode if it was on before a restart */
+	restorefocushover(); /* load the persisted focus-on-hover setting */
 	restoreviewtags(); /* re-show the tag each monitor was actually viewing before a restart */
 	run(); /* main event loop of dwm -->
 * continuously listens to events from the X server (window changes, key presses, mouse) 
