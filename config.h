@@ -140,8 +140,8 @@ static const Key keys[] = {
     {MODKEY,                             XK_l,            movecorner,       {.f = +0.05}},       // maximalist: next corner / tiling: increrase master area
     {MODKEY | ShiftMask,                 XK_m,            resizemaximalist, {.f = +1}},          // maximalist: grow focused window by maximalistresizestep
     {MODKEY | ControlMask,               XK_m,            resizemaximalist, {.f = -1}},          // maximalist: shrink focused window by maximalistresizestep
-    {MODKEY | ControlMask | ShiftMask,   XK_f,            togglefocusonhover, {0}},               // Toggle focus-follows-hover on/off (persists across reboots)
-    {MODKEY,                             XK_r,            keyshade, {0}}, // TOGGLE SHADE (rolls the notch up/down, same as double-clicking it)
+    {MODKEY | ControlMask | ShiftMask,   XK_f,            togglefocusonhover, {0}},              // Toggle focus-follows-hover on/off (persists across reboots)
+    {MODKEY,                             XK_r,            keyshade, {0}},                        // TOGGLE SHADE (rolls the notch up/down, same as double-clicking it)
     {MODKEY,                             XK_0,            view,             {.ui = ~0}},         // View All Tags
     {MODKEY | ShiftMask,                 XK_0,            tag,              {.ui = ~0}},         // View All Tags
     {MODKEY | ControlMask | ShiftMask,   XK_q,            quit,             {1}},                // Refresh Dwm
@@ -157,7 +157,6 @@ static const Key keys[] = {
 //  {MODKEY | ControlMask,               XK_k,            setlayout,        {.v = &layouts[4]}}, // Dwindle Layout
 //  {MODKEY | ControlMask,               XK_space,        setlayout,        {0}},                // Default Layout
     {MODKEY | ShiftMask,                 XK_space,        togglefloating,   {0}},                // Unfloat a window
-    {MODKEY,                             XK_space,        zoom,             {0}},                // Zoom?
     {MODKEY | ControlMask,               XK_space,        focusmaster,      {0}},                // Focus on master window
     {MODKEY | ControlMask | ShiftMask,   XK_l,            togglesticky,     {0}},                // Make window follow trough tabs
     // Multi monitor control
@@ -279,6 +278,8 @@ static const char *const autostart[] = {
 	"/bin/sh", "-c", "exec " HOME "/.config/scripts/system/batery-watchdog", NULL,
   /* emacs daemon */
   "/bin/sh", "-c", "exec emacs --daemon", NULL,
+  /* numlock */
+	"/bin/sh", "-c", "xset r rate 150 50", NULL,
 	NULL /* terminate autostart apps when dwm closes */
 };
 

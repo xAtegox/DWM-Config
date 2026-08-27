@@ -715,8 +715,6 @@ buttonpress(XEvent *e)
 	Monitor *m;
 	XButtonPressedEvent *ev = &e->xbutton;
 	char *text, *s, ch;
-	static Client *lastnotchclient = NULL;
-	static Time lastnotchtime = 0;
 
 	click = ClkRootWin;
 	/* focus monitor if necessary */
@@ -729,16 +727,10 @@ buttonpress(XEvent *e)
 		focus(c); /* also switches selmon if c is on another monitor */
 		restack(c->mon);
 		if (ev->button == Button1) {
-			if (ev->x >= (int)notchwidth(c) - bh) {
+			if (ev->x >= (int)notchwidth(c) - bh)
 				killthis(c); /* close button */
-			} else if (c == lastnotchclient && ev->time - lastnotchtime < 400) {
-				toggleshade(c); /* double-click: roll up/down instead of dragging */
-				lastnotchclient = NULL;
-			} else {
-				lastnotchclient = c;
-				lastnotchtime = ev->time;
+			else
 				movemouse(&arg); /* icon slot and title area both drag the window */
-			}
 		}
 		return;
 	}
@@ -2241,6 +2233,8 @@ setfullscreen(Client *c, int fullscreen)
 		XChangeProperty(dpy, c->win, netatom[NetWMState], XA_ATOM, 32,
 			PropModeReplace, (unsigned char*)&netatom[NetWMFullscreen], 1);
 		c->isfullscreen = 1;
+		if (maximalistmode && c->twin) /* hide the notch while fullscreen in Maximalist Mode */
+			XUnmapWindow(dpy, c->twin);
 		c->oldstate = c->isfloating;
 		c->oldbw = c->bw;
 		c->bw = 0;
@@ -2251,6 +2245,8 @@ setfullscreen(Client *c, int fullscreen)
 		XChangeProperty(dpy, c->win, netatom[NetWMState], XA_ATOM, 32,
 			PropModeReplace, (unsigned char*)0, 0);
 		c->isfullscreen = 0;
+		if (maximalistmode && c->twin) /* restore the notch when leaving fullscreen in Maximalist Mode */
+			XMapRaised(dpy, c->twin);
 		c->isfloating = c->oldstate;
 		c->bw = c->oldbw;
 		c->x = c->oldx;
@@ -2825,8 +2821,8 @@ toggleshade(Client *c)
 void
 keyshade(const Arg *arg)
 {
-	if (selmon->sel)
-		toggleshade(selmon->sel); /* keybind equivalent of double-clicking the notch */
+	if (maximalistmode && selmon->sel)
+		toggleshade(selmon->sel); /* keybind equivalent of double-clicking the notch; only works in Maximalist Mode */
 }
 
 void
@@ -2891,7 +2887,7 @@ notch:
 			if (!c->twin)
 				continue;
 			XSetWindowBorder(dpy, c->twin, scheme[c == c->mon->sel ? SchemeNotchSel : SchemeNotchNorm][ColBorder].pixel);
-			if (maximalistmode) {
+			if (maximalistmode && !c->isfullscreen) {
 				ensurenotchroom(c);
 				XMapRaised(dpy, c->twin);
 			} else {
