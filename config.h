@@ -175,7 +175,7 @@ static const Key keys[] = {
     // Toggle dwmblocks
     {MODKEY | ControlMask,  XK_t,     togglebarstatus, {0}},
     // Specific app keybinds
-    {MODKEY,                           XK_m,     spawn, {.v = (const char *[]) {"music-cover", NULL}}}, // Custom Music Player
+    {MODKEY,                           XK_m,     spawn, {.v = (const char *[]) {"kitty", "-e", "opencode", NULL}}},
     {MODKEY,                           XK_b,     spawn, {.v = (const char *[]) {"helium-browser", NULL}}}, // Browser
     {MODKEY,                           XK_d,     spawn, {.v = (const char *[]) {"kitty", "-e", "concord", NULL}}}, // DISCORD (concord)
     {MODKEY | ShiftMask,               XK_d,     spawn, {.v = (const char *[]) {"vesktop", NULL}}}, // Vesktop
