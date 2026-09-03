@@ -189,7 +189,7 @@ static const Key keys[] = {
     {MODKEY | ShiftMask,               XK_t,     spawn, {.v = (const char *[]) {HOME "/.config/scripts/system/trackpad-toggle", NULL}}}, // Trackpad Toggle
     {MODKEY,                           XK_c,     spawn, {.v = (const char *[]) {HOME "/.config/scripts/audio-video/cam.sh", "--view", NULL}}}, // Open Camera
     {MODKEY,                           XK_Shift_R, spawn, {.v = (const char *[]){HOME "/.config/scripts/system/powermenu", NULL}}}, // Power Menu Options
-    {MODKEY,                           XK_BackSpace, spawn, {.v = (const char *[]){HOME "/.config/scripts/system/lock", NULL}}}, // Lockscreen
+    {MODKEY,                           XK_BackSpace, spawn, {.v = (const char *[]){"slock", NULL}}}, // Lockscreen
 
     // Special Function keys
     {0, XF86XK_AudioMute,             spawn, SHCMD("pactl set-sink-mute @DEFAULT_SINK@ toggle; pkill -RTMIN+10 dwmblocks")}, // Mute Audio
