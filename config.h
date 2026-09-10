@@ -180,6 +180,7 @@ static const Key keys[] = {
     {MODKEY | ShiftMask,               XK_d,     spawn, {.v = (const char *[]) {"vesktop", NULL}}}, // Vesktop
     {MODKEY,                           XK_e,     spawn, SHCMD("emacsclient -c -F '((name . \"Emacs Client\") (title . \"Emacs Client\") (width . 110) (height . 53))'") }, // Bigger Floating Emacs Client
     {MODKEY | ControlMask,             XK_e,     spawn, SHCMD("emacsclient --eval '(emacs-everywhere)'")}, // Emacs Everywhere
+    {MODKEY | ControlMask,             XK_w,     spawn, {.v = (const char *[]) {HOME "/.config/wallpaper-picker/wallpaper-picker.py"}}}, // New wallpaper picker
     {MODKEY | ShiftMask,               XK_b,     spawn, {.v = (const char *[]) {"kitty", "-e", "ptui", NULL}}}, // Kitty Btop Terminal
     {MODKEY | ShiftMask,               XK_f,     spawn, {.v = (const char *[]) {"nautilus", NULL}}}, // File Browser
     {MODKEY | ShiftMask,               XK_r,     spawn, {.v = (const char *[]) {HOME "/.config/scripts/audio-video/screenrecord", "toggle", NULL}}}, // Screen Recording Script
@@ -260,8 +261,6 @@ static const char *const autostart[] = {
 	"/bin/sh", "-c", "numlockx on", NULL,
 	/* dark mode */
 	"/bin/sh", "-c", "gsettings set org.gnome.desktop.interface color-scheme 'prefer-dark'", NULL,
-	/* notification daemon */
-	"/bin/sh", "-c", "exec dunst", NULL,
 	/* pre-clear dwmblocks signal */
 	"pkill", "-RTMIN+15", "dwmblocks", NULL,
 	/* mpc player-change watcher */
@@ -313,6 +312,7 @@ static const Rule rules[] = {
     {"NULL", NULL, "Emacs Client", 0, 1, -1},
     {NULL, NULL, "Powermenu", 0, 1, -1},
     {"Music Preview", NULL, NULL, 0, 1, 0, 1, -1},
+    { .class = "wallpaper-picker", .isfloating = 1, .monitor = -1, .nomaximalist = 1 },
     {"Wallpaper Picker", NULL, NULL, 1, 0, -1},
     { .class = "DockApp", .isfloating = 1, .monitor = -1, .nomaximalist = 1, .staticlabel = "DOCK", .nokill = 1, .alwayssticky = 1, .alwaysbelow = 1, .nofocus = 1, .nofullscreen = 1 },
     {"fzfmenu", NULL, NULL, 0, 1, 1, 1, -1},
