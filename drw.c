@@ -4,6 +4,7 @@
 #include <string.h>
 #include <X11/Xlib.h>
 #include <X11/Xft/Xft.h>
+#include <X11/extensions/Xrender.h>
 
 #include "drw.h"
 #include "util.h"
@@ -445,4 +446,61 @@ drw_cur_free(Drw *drw, Cur *cursor)
 
 	XFreeCursor(drw->dpy, cursor->cursor);
 	free(cursor);
+}
+
+static unsigned short
+shadecomp(unsigned short c, int amt)
+{
+	int v = (int)c + (amt * 0xffff) / 100;
+	if (v < 0)
+		v = 0;
+	if (v > 0xffff)
+		v = 0xffff;
+	return (unsigned short)v;
+}
+
+/* Derives a lighter (amt > 0) or darker (amt < 0) shade of src, amt is a
+ * percentage of full-scale (-100..100). Used for WindowMaker-style bezel
+ * highlight/shadow lines, computed live from the current pywal color
+ * instead of a second hardcoded color. */
+void
+drw_clr_shade(Drw *drw, Clr *dest, Clr *src, int amt)
+{
+	XRenderColor rc;
+
+	if (!drw || !dest || !src)
+		return;
+
+	rc.red   = shadecomp(src->color.red, amt);
+	rc.green = shadecomp(src->color.green, amt);
+	rc.blue  = shadecomp(src->color.blue, amt);
+	rc.alpha = 0xffff;
+
+	if (!XftColorAllocValue(drw->dpy, DefaultVisual(drw->dpy, drw->screen),
+	                         DefaultColormap(drw->dpy, drw->screen), &rc, dest))
+		die("error, cannot allocate shaded color");
+}
+
+/* Draws a thin WindowMaker-style relief frame into the given rect: a
+ * highlight line on the top+left edges and a shadow line on the
+ * bottom+right edges (reversed when sunken=1, for a pressed/recessed
+ * look). Caller supplies the precomputed highlight/shadow colors. */
+void
+drw_bezel(Drw *drw, Clr *hi, Clr *lo, int x, int y, unsigned int w, unsigned int h, int sunken)
+{
+	Clr *top, *bottom;
+
+	if (!drw || w < 2 || h < 2)
+		return;
+
+	top    = sunken ? lo : hi;
+	bottom = sunken ? hi : lo;
+
+	XSetForeground(drw->dpy, drw->gc, top->pixel);
+	XDrawLine(drw->dpy, drw->drawable, drw->gc, x, y, x + (int)w - 1, y);
+	XDrawLine(drw->dpy, drw->drawable, drw->gc, x, y, x, y + (int)h - 1);
+
+	XSetForeground(drw->dpy, drw->gc, bottom->pixel);
+	XDrawLine(drw->dpy, drw->drawable, drw->gc, x, y + (int)h - 1, x + (int)w - 1, y + (int)h - 1);
+	XDrawLine(drw->dpy, drw->drawable, drw->gc, x + (int)w - 1, y, x + (int)w - 1, y + (int)h - 1);
 }

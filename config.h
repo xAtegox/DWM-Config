@@ -5,6 +5,9 @@
 /* ---------------------------- appearance --------------------------------- */
 static unsigned int borderpx = 1;              // window border pixel width
 static const unsigned int maximalistborderpx = 2; // border width used in Maximalist Mode
+static const int notchbezelhi = 14;  // % lighten applied to notch ColBg for the top/left highlight line
+static const int notchbezello = -22; // % darken applied to notch ColBg for the bottom/right shadow line
+static const unsigned int dockapppad = 2; // px of pywal-bezeled tile shown around a wrapped real dockapp's icon window
 static const int dockclearance = 67; // Width reserved on the right edge for the dockapp column while Maximalist Mode is on
 static const double maximalistresizestep = 0.20; // Percentage (as decimal) resizemaximalist() grows/shrinks the focused window by in Maximalist Mode
 static unsigned int snap = 3;                  // distance to screen edge where windows snap
@@ -35,6 +38,7 @@ static char normfgcolor[]     = "#B5976E";
 static char selfgcolor[]      = "#1f1c14";
 static char selbordercolor[]  = "#928c82";
 static char selbgcolor[]      = "#B5976E";
+static char termbgcolor[]     = "#1f1c14"; // mirrors *.background (the resource terminals read) via loadxrdb(); keeps the unfocused notch the same color as terminal backgrounds
 
 // Colours if xrdb is loaded
 static char *colors[][3] = {
@@ -46,7 +50,7 @@ static char *colors[][3] = {
     [SchemeInfoSel]   = {normfgcolor,   normbgcolor, normbgcolor},
     [SchemeInfoNorm]  = {normfgcolor,   normbgcolor, normbgcolor},
     [SchemeNotchSel]  = {selfgcolor,    selbgcolor,  selbordercolor},
-    [SchemeNotchNorm] = {normfgcolor,   normbgcolor, normbordercolor},
+    [SchemeNotchNorm] = {normfgcolor,   termbgcolor, normbordercolor},
 };
 
 /* ---------------------------- shortcuts/macros ---------------------------- */

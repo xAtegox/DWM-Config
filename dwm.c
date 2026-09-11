@@ -134,6 +134,8 @@ struct Client { /* a window that dwm is managing */
 	int alwaysbelow; /* if 1, never raised — always stacked behind other windows */
 	int nofocus; /* if 1, clicking still reaches the app but dwm never treats it as focused */
 	int nofullscreen; /* if 1, this client can never be fullscreened */
+	int isdockapp; /* if 1, c->win is a real dockapp's icon_window (swapped in by manage()), not its actual top-level window */
+	Window dockicon; /* if isdockapp: the app's real content window, reparented as a child of c->win (our drawn background tile); None otherwise */
 	int cornerpos; /* which position movecorner() last snapped this client to: 0=TL 1=TR 2=right-center 3=BR 4=BL 5=left-center 6=center */
 	int ismaximalistzoomed; /* if 1, togglefloating() has maximized this client in Maximalist Mode; zoomx/y/w/h hold the geometry to restore on the next press */
 	int zoomx, zoomy, zoomw, zoomh; /* geometry before the maximalist maximize toggle, kept separate from oldx/oldy/oldw/oldh which fullscreen already uses */
@@ -208,6 +210,7 @@ typedef struct {
 	int alwaysbelow; /* 1 = never raised — always stacked behind other windows */
 	int nofocus; /* 1 = clicking still reaches the app but dwm never treats it as focused */
 	int nofullscreen; /* 1 = this app can never be fullscreened */
+	int isdockapp; /* 1 = a real WindowMaker dockapp binary; manage() will swap to its XWMHints icon_window (if it sets one) instead of its withdrawn main window */
 } Rule;
 
 
@@ -228,6 +231,10 @@ static void configurenotify(XEvent *e);
 static void configurerequest(XEvent *e);
 static Monitor *createmon(void);
 static void createnotch(Client *c);
+static void updatebezelcolors(void);
+static void drawdocktile(Client *c);
+static void drawdocktiles(void);
+static int matchdockapprule(Window w);
 static void maybefloat(Client *c);
 static void destroynotify(XEvent *e);
 static void destroynotch(Client *c);
@@ -385,6 +392,8 @@ static int restart = 0;
 static int running = 1;
 static Cur *cursor[CurLast];
 static Clr **scheme;
+static Clr bezelhi[2]; /* [0] = SchemeNotchNorm, [1] = SchemeNotchSel — computed highlight shade of that scheme's ColBg */
+static Clr bezello[2]; /* same, but the darker shadow shade */
 static Display *dpy;
 static Drw *drw;
 static Monitor *mons, *selmon;
@@ -432,6 +441,39 @@ autostart_exec() {
 }
 
 /* function implementations */
+int
+matchdockapprule(Window w)
+{
+	/* Real WindowMaker dockapps expose their icon via XWMHints.icon_window,
+	 * but that's only meaningful once we know the *class-matched* rule says
+	 * isdockapp. This runs before updatetitle()/Client alloc, so — unlike
+	 * applyrules() — it only has class/instance to go on (title-only rule
+	 * variants are deliberately skipped here, they still apply normally
+	 * later via applyrules()). */
+	XClassHint ch = { NULL, NULL };
+	const Rule *r;
+	unsigned int i;
+	int match = 0;
+
+	if (!XGetClassHint(dpy, w, &ch))
+		return 0;
+	for (i = 0; i < LENGTH(rules); i++) {
+		r = &rules[i];
+		if (!r->isdockapp || (!r->class && !r->instance))
+			continue;
+		if ((!r->class || (ch.res_class && strstr(ch.res_class, r->class)))
+		&& (!r->instance || (ch.res_name && strstr(ch.res_name, r->instance)))) {
+			match = 1;
+			break;
+		}
+	}
+	if (ch.res_class)
+		XFree(ch.res_class);
+	if (ch.res_name)
+		XFree(ch.res_name);
+	return match;
+}
+
 void
 applyrules(Client *c)
 {
@@ -463,6 +505,7 @@ applyrules(Client *c)
 			c->nokill = r->nokill;
 			c->alwaysbelow = r->alwaysbelow;
 			c->nofullscreen = r->nofullscreen;
+			c->isdockapp = r->isdockapp;
 			if (r->nofocus) {
 				c->nofocus = 1;
 				c->neverfocus = 1;
@@ -518,6 +561,7 @@ maybefloat(Client *c)
 			c->nokill = r->nokill;
 			c->alwaysbelow = r->alwaysbelow;
 			c->nofullscreen = r->nofullscreen;
+			c->isdockapp = r->isdockapp;
 			if (r->nofocus) {
 				c->nofocus = 1;
 				c->neverfocus = 1;
@@ -1224,30 +1268,108 @@ drawbars(void)
 void
 drawnotch(Client *c)
 {
-	unsigned int w;
+	unsigned int w, isz;
+	int sel = (c == c->mon->sel);
+	int ip;
+	Clr *hi = &bezelhi[sel];
+	Clr *border = &scheme[sel ? SchemeNotchSel : SchemeNotchNorm][ColBorder];
 
 	if (!c->twin)
 		return;
 
 	w = notchwidth(c);
-	drw_setscheme(drw, scheme[c == c->mon->sel ? SchemeNotchSel : SchemeNotchNorm]);
+	drw_setscheme(drw, scheme[sel ? SchemeNotchSel : SchemeNotchNorm]);
+
+	/* flat background fill across the whole bar */
+	drw_rect(drw, 0, 0, w, bh, 1, 1);
 
 	if (w > 2 * (unsigned int)bh) {
-		/* icon slot on the left (also the left half of the drag area) */
-		drw_rect(drw, 0, 0, bh, bh, 1, 1);
-		drw_rect(drw, bh / 3, bh / 3, bh - 2 * (bh / 3), bh - 2 * (bh / 3), 1, 0);
-		/* close button on the right */
+		/* icon slot: small unfilled outline square, not a solid block —
+		 * matches wmaker's actual icon tile rather than the old chunky fill */
+		isz = (bh * 42) / 100;
+		ip = ((int)bh - (int)isz) / 2;
+		drw_rect(drw, ip, ip, isz, isz, 0, 0);
+
+		/* close button, plain glyph, no separate box */
 		drw_text(drw, w - bh, 0, bh, bh, bh / 2 - lrpad / 4, "x", 0);
-		/* title in the middle */
+		/* title, centered (middle cell is symmetric, so this is also centered on the whole bar) */
 		drw_text(drw, bh, 0, w - 2 * bh, bh, lrpad / 2, c->notchlabel, 0);
+
+		/* cell dividers between icon/title/close: a dark border line
+		 * followed by a light highlight line, matching wmaker's two-tone
+		 * seam between titlebar buttons */
+		XSetForeground(drw->dpy, drw->gc, border->pixel);
+		XDrawLine(drw->dpy, drw->drawable, drw->gc, bh, 0, bh, (int)bh - 1);
+		XDrawLine(drw->dpy, drw->drawable, drw->gc, (int)w - bh, 0, (int)w - bh, (int)bh - 1);
+		XSetForeground(drw->dpy, drw->gc, hi->pixel);
+		XDrawLine(drw->dpy, drw->drawable, drw->gc, bh + 1, 0, bh + 1, (int)bh - 1);
+		XDrawLine(drw->dpy, drw->drawable, drw->gc, (int)w - bh + 1, 0, (int)w - bh + 1, (int)bh - 1);
 	} else {
 		drw_text(drw, 0, 0, w, bh, lrpad / 2, c->notchlabel, 0);
 	}
 
-	/* Window Maker-ish inset bezel, one px inside the top/left/right edges */
-	drw_rect(drw, 1, 1, w - 2, bh - 2, 0, 0);
+	/* subtle raised-bezel highlight just inside the real window border —
+	 * top + left only; the border itself (already dark) reads as the
+	 * bottom/right shadow, same as wmaker's actual titlebar */
+	XSetForeground(drw->dpy, drw->gc, hi->pixel);
+	XDrawLine(drw->dpy, drw->drawable, drw->gc, 0, 0, (int)w - 1, 0);
+	XDrawLine(drw->dpy, drw->drawable, drw->gc, 0, 0, 0, (int)bh - 1);
 
 	drw_map(drw, c->twin, 0, 0, w, bh);
+}
+
+void
+updatebezelcolors(void)
+{
+	drw_clr_shade(drw, &bezelhi[0], &scheme[SchemeNotchNorm][ColBg], notchbezelhi);
+	drw_clr_shade(drw, &bezello[0], &scheme[SchemeNotchNorm][ColBg], notchbezello);
+	drw_clr_shade(drw, &bezelhi[1], &scheme[SchemeNotchSel][ColBg], notchbezelhi);
+	drw_clr_shade(drw, &bezello[1], &scheme[SchemeNotchSel][ColBg], notchbezello);
+}
+
+/* Paints the pywal-colored bezel tile behind a wrapped real dockapp's icon
+ * window — plain Xlib calls straight onto c->win, not the shared bar `drw`
+ * pixmap (which is only bh tall and too small for a ~64px dockapp tile).
+ * Dock tiles are always drawn in the unfocused/Norm palette: dockapp rules
+ * carry .nofocus, so they're never "selected" in the focus sense. */
+void
+drawdocktile(Client *c)
+{
+	GC gc;
+	Clr *hi = &bezelhi[0];
+	Clr border = scheme[SchemeNotchNorm][ColBorder];
+	unsigned int w = c->w, h = c->h;
+
+	if (!c->dockicon)
+		return;
+
+	gc = XCreateGC(dpy, c->win, 0, NULL);
+
+	XSetForeground(dpy, gc, scheme[SchemeNotchNorm][ColBg].pixel);
+	XFillRectangle(dpy, c->win, gc, 0, 0, w, h);
+
+	/* raised relief: highlight top+left, shadow (border color) bottom+right —
+	 * same convention as the notch bezel */
+	XSetForeground(dpy, gc, hi->pixel);
+	XDrawLine(dpy, c->win, gc, 0, 0, (int)w - 1, 0);
+	XDrawLine(dpy, c->win, gc, 0, 0, 0, (int)h - 1);
+
+	XSetForeground(dpy, gc, border.pixel);
+	XDrawLine(dpy, c->win, gc, 0, (int)h - 1, (int)w - 1, (int)h - 1);
+	XDrawLine(dpy, c->win, gc, (int)w - 1, 0, (int)w - 1, (int)h - 1);
+
+	XFreeGC(dpy, gc);
+}
+
+void
+drawdocktiles(void)
+{
+	Client *c;
+	Monitor *m;
+
+	for (m = mons; m; m = m->next)
+		for (c = m->clients; c; c = c->next)
+			drawdocktile(c);
 }
 
 void
@@ -1637,6 +1759,7 @@ loadxrdb(void)
         XRDB_LOAD_COLOR("dwm.selbordercolor", selbordercolor);
         XRDB_LOAD_COLOR("dwm.selbgcolor", selbgcolor);
         XRDB_LOAD_COLOR("dwm.selfgcolor", selfgcolor);
+        XRDB_LOAD_COLOR("*.background", termbgcolor); /* same resource terminals read, so the unfocused notch matches terminal bg exactly */
       }
     }
   }
@@ -1650,9 +1773,46 @@ manage(Window w, XWindowAttributes *wa)
 	Client *c, *t = NULL, *term = NULL;
 	Window trans = None;
 	XWindowChanges wc;
+	XWindowAttributes iconwa;
+	Window iconwin = None;
+
+	/* Real WindowMaker dockapps often set IconWindowHint in WM_HINTS: the
+	 * window we were just handed (w) is the app's withdrawn/real window,
+	 * and the actual thing meant to be shown docked is a separate,
+	 * usually 64x64, icon_window that draws the app's actual pixmap
+	 * content. WindowMaker's dock always sits an opaque, bezeled tile
+	 * *behind* that icon window — a lot of dockapps shape/mask themselves,
+	 * so with nothing of ours behind them they show through to whatever's
+	 * on screen underneath (the "husk" look). We recreate that below:
+	 * wrap the app's real icon window in our own small pywal-colored tile
+	 * instead of just displaying the icon window bare. */
+	{
+		XWMHints *dwmh = XGetWMHints(dpy, w);
+		if (dwmh) {
+			if ((dwmh->flags & IconWindowHint) && dwmh->icon_window != None
+			&& matchdockapprule(w)
+			&& XGetWindowAttributes(dpy, dwmh->icon_window, &iconwa))
+				iconwin = dwmh->icon_window;
+			XFree(dwmh);
+		}
+	}
+
+	if (iconwin != None) {
+		Window tile = XCreateSimpleWindow(dpy, root, iconwa.x, iconwa.y,
+			iconwa.width + 2 * dockapppad, iconwa.height + 2 * dockapppad, 0, 0, 0);
+		XSelectInput(dpy, iconwin, StructureNotifyMask); /* so we hear about it when the app closes */
+		XReparentWindow(dpy, iconwin, tile, dockapppad, dockapppad);
+		XMapWindow(dpy, iconwin);
+		iconwa.width  += 2 * dockapppad;
+		iconwa.height += 2 * dockapppad;
+		iconwa.border_width = 0;
+		w = tile;
+		wa = &iconwa;
+	}
 
 	c = ecalloc(1, sizeof(Client)); /* allocate and initialize a new Client struct to represent the window */
 	c->win = w;
+	c->dockicon = iconwin;
 	c->pid = winpid(w); /* pid used for things like swallowing */
 	/* geometry using XWindowAttributes */
 	c->x = c->oldx = wa->x;
@@ -1706,6 +1866,8 @@ manage(Window w, XWindowAttributes *wa)
 	}
 	
 	c->bw = borderpx;
+	if (c->isdockapp)
+		c->bw = 0; /* our own drawn tile bezel is the frame — an extra WM border would double it up */
 	if (maximalistmode && !c->isfullscreen && !c->nomaximalist) {
 		c->premaxbw = c->bw;
 		c->bw = 0;
@@ -1741,6 +1903,7 @@ manage(Window w, XWindowAttributes *wa)
 	c->mon->sel = c;
 	arrange(c->mon); /* recalc based on layout */
 	XMapWindow(dpy, c->win);
+	drawdocktile(c); /* must run after the map — an unmapped window won't retain the drawing */
 	if (term)
 		swallow(term, c); /* if new window is child of a terminal, replace terminal (swallow) */
 	focus(NULL); /* focus the client */
@@ -2030,8 +2193,8 @@ resizeclient(Client *c, int x, int y, int w, int h)
 	XConfigureWindow(dpy, c->win, CWX|CWY|CWWidth|CWHeight|CWBorderWidth, &wc);
 	configure(c);
 	updatenotchpos(c);
-	if (c->oldw != c->w && maximalistmode)
-		drawnotch(c); /* content only needs a redraw when width actually changed, not on a plain move */
+	if (maximalistmode && c->twin)
+		drawnotch(c); /* redraw unconditionally — gating on width-only missed real content changes (focus/sel-state, tag moves, re-shows) that leave stale notch content behind when geometry happens to be unchanged */
 	XSync(dpy, False);
 }
 
@@ -2451,6 +2614,7 @@ setup(void)
 	scheme = ecalloc(LENGTH(colors), sizeof(Clr *)); /* allocates memory to set up colorschemes */
 	for (i = 0; i < LENGTH(colors); i++)
 		scheme[i] = drw_scm_create(drw, colors[i], 3); /* each scheme[i] corresponds to a SchemeNorm, SchemeSel, etc */
+	updatebezelcolors(); /* derive the notch's highlight/shadow relief colors from the live pywal scheme */
 	/* init bars */
 	updatebars(); /* creates a bar window for each monitor */
 	updatestatus(); /* renders the status text */
@@ -3129,6 +3293,17 @@ unmanage(Client *c, int destroyed)
 		XSetErrorHandler(xerror);
 		XUngrabServer(dpy);
 	}
+	if (c->dockicon) {
+		/* c->win here is our own synthetic tile window, not something the
+		 * app owns — nothing to "withdraw", we just built it as a
+		 * backdrop. If the app's real window is still alive (dwm
+		 * restart/quit, not the app exiting), hand it back to root before
+		 * we tear our tile down, so the running dockapp survives with a
+		 * valid (if now unpositioned) window instead of dying with us. */
+		if (!destroyed)
+			XReparentWindow(dpy, c->dockicon, root, c->x, c->y);
+		XDestroyWindow(dpy, c->win); /* we created this tile, so we clean it up (apps clean up their own windows; the X server won't touch ours) */
+	}
 	destroynotch(c);
 	free(c); /* free memory */
 
@@ -3573,7 +3748,7 @@ wintoclient(Window w)
 
 	for (m = mons; m; m = m->next)
 		for (c = m->clients; c; c = c->next)
-			if (c->win == w)
+			if (c->win == w || c->dockicon == w)
 				return c;
 	return NULL;
 }
@@ -3653,6 +3828,8 @@ xrdb(const Arg *arg)
   int i;
   for (i = 0; i < LENGTH(colors); i++)
                 scheme[i] = drw_scm_create(drw, colors[i], 3);
+  updatebezelcolors(); /* re-derive relief colors — theme reload changes ColBg, so the old shades would be stale */
+  drawdocktiles(); /* repaint dockapp tile backgrounds with the new palette */
   focus(NULL);
   arrange(NULL);
   drawnotches();
