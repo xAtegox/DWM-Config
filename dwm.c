@@ -134,6 +134,8 @@ struct Client { /* a window that dwm is managing */
 	int alwaysbelow; /* if 1, never raised — always stacked behind other windows */
 	int nofocus; /* if 1, clicking still reaches the app but dwm never treats it as focused */
 	int nofullscreen; /* if 1, this client can never be fullscreened */
+	int isdockapp; /* if 1, c->win is our own synthetic bezeled background tile, not the app's real window */
+	Window dockicon; /* the app's real content window (its icon_window if it set one, else its own window), reparented as a child of c->win; None if not a dockapp */
 	int cornerpos; /* which position movecorner() last snapped this client to: 0=TL 1=TR 2=right-center 3=BR 4=BL 5=left-center 6=center */
 	int ismaximalistzoomed; /* if 1, togglefloating() has maximized this client in Maximalist Mode; zoomx/y/w/h hold the geometry to restore on the next press */
 	int zoomx, zoomy, zoomw, zoomh; /* geometry before the maximalist maximize toggle, kept separate from oldx/oldy/oldw/oldh which fullscreen already uses */
@@ -208,6 +210,7 @@ typedef struct {
 	int alwaysbelow; /* 1 = never raised — always stacked behind other windows */
 	int nofocus; /* 1 = clicking still reaches the app but dwm never treats it as focused */
 	int nofullscreen; /* 1 = this app can never be fullscreened */
+	int isdockapp; /* 1 = wrap this window in our own bezeled background tile (see manage()) */
 } Rule;
 
 
@@ -229,6 +232,9 @@ static void configurerequest(XEvent *e);
 static Monitor *createmon(void);
 static void createnotch(Client *c);
 static void updatebezelcolors(void);
+static void drawdocktile(Client *c);
+static void drawdocktiles(void);
+static int matchdockapprule(Window w);
 static void maybefloat(Client *c);
 static void destroynotify(XEvent *e);
 static void destroynotch(Client *c);
@@ -388,6 +394,7 @@ static Cur *cursor[CurLast];
 static Clr **scheme;
 static Clr bezelhi[2]; /* [0] = SchemeNotchNorm, [1] = SchemeNotchSel — computed highlight shade of that scheme's ColBg */
 static Clr bezello[2]; /* same, but the darker shadow shade */
+static Clr dockbg, dockhi, docklo; /* flat classic-WindowMaker light gray + its hi/lo bevel shades — deliberately NOT pywal-derived yet, see drawdocktile() */
 static Display *dpy;
 static Drw *drw;
 static Monitor *mons, *selmon;
@@ -435,6 +442,41 @@ autostart_exec() {
 }
 
 /* function implementations */
+int
+matchdockapprule(Window w)
+{
+	/* Any window whose class/instance matches a rule with .isdockapp gets
+	 * wrapped in a bezeled background tile — real WindowMaker binaries
+	 * (via their XWMHints icon_window) and our own PywalDock-toolkit
+	 * apps (which have no icon_window, so we wrap the window itself)
+	 * alike. This runs before updatetitle()/Client alloc, so — unlike
+	 * applyrules() — it only has class/instance to go on (title-only
+	 * rule variants are deliberately skipped here, they still apply
+	 * normally later via applyrules()). */
+	XClassHint ch = { NULL, NULL };
+	const Rule *r;
+	unsigned int i;
+	int match = 0;
+
+	if (!XGetClassHint(dpy, w, &ch))
+		return 0;
+	for (i = 0; i < LENGTH(rules); i++) {
+		r = &rules[i];
+		if (!r->isdockapp || (!r->class && !r->instance))
+			continue;
+		if ((!r->class || (ch.res_class && strstr(ch.res_class, r->class)))
+		&& (!r->instance || (ch.res_name && strstr(ch.res_name, r->instance)))) {
+			match = 1;
+			break;
+		}
+	}
+	if (ch.res_class)
+		XFree(ch.res_class);
+	if (ch.res_name)
+		XFree(ch.res_name);
+	return match;
+}
+
 void
 applyrules(Client *c)
 {
@@ -466,6 +508,7 @@ applyrules(Client *c)
 			c->nokill = r->nokill;
 			c->alwaysbelow = r->alwaysbelow;
 			c->nofullscreen = r->nofullscreen;
+			c->isdockapp = r->isdockapp;
 			if (r->nofocus) {
 				c->nofocus = 1;
 				c->neverfocus = 1;
@@ -521,6 +564,7 @@ maybefloat(Client *c)
 			c->nokill = r->nokill;
 			c->alwaysbelow = r->alwaysbelow;
 			c->nofullscreen = r->nofullscreen;
+			c->isdockapp = r->isdockapp;
 			if (r->nofocus) {
 				c->nofocus = 1;
 				c->neverfocus = 1;
@@ -963,6 +1007,8 @@ configurerequest(XEvent *e)
 				configure(c);
 			if (ISVISIBLE(c))
 				XMoveResizeWindow(dpy, c->win, c->x, c->y, c->w, c->h);
+			if (c->isdockapp && (ev->value_mask & (CWWidth|CWHeight)))
+				drawdocktile(c); /* repaint bezel to match new size — e.g. an external script wmctl-resizing the tile */
 			ensurenotchroom(c); /* clamps clear of the notch's space and syncs its position; a late ConfigureRequest (common right after a window spawns) bypasses resizeclient() entirely, so this path needs its own explicit call */
 		} else
 			configure(c);
@@ -1284,6 +1330,63 @@ updatebezelcolors(void)
 	drw_clr_shade(drw, &bezello[0], &scheme[SchemeNotchNorm][ColBg], notchbezello);
 	drw_clr_shade(drw, &bezelhi[1], &scheme[SchemeNotchSel][ColBg], notchbezelhi);
 	drw_clr_shade(drw, &bezello[1], &scheme[SchemeNotchSel][ColBg], notchbezello);
+	/* classic Motif/WindowMaker dock gray — flat #AEAAAE base with a
+	 * white highlight and a dark gray shadow, independent of the pywal
+	 * scheme colors above (dockapp tiles get their own palette hook later) */
+	drw_clr_create(drw, &dockbg, "#AEAAAE");
+	drw_clr_create(drw, &dockhi, "#FFFFFF");
+	drw_clr_create(drw, &docklo, "#555555");
+}
+
+/* Paints the tile behind a wrapped dockapp's content window — plain Xlib
+ * calls straight onto c->win, not the shared bar `drw` pixmap (which is
+ * only bh tall and too small for a ~64px dockapp tile). Flat classic
+ * Motif/WindowMaker light gray, not pywal-derived yet (see updatebezelcolors()
+ * — a pywal hook for this is planned separately). Single outset bevel —
+ * highlight top/left, shadow bottom/right — the classic "raised tile"
+ * look real WindowMaker dock tiles have. (Tried a second inverted ring
+ * around the icon for extra depth; dropped it — highlight ended up on
+ * all four sides at once between the two rings, reading as a solid
+ * white outline instead of a 3D edge.) Dock tiles are always drawn in
+ * the unfocused palette: dockapp rules carry .nofocus, so they're never
+ * "selected" in the focus sense. Called both right after the tile is
+ * first mapped and again any time it gets resized (e.g. an external
+ * script wmctl-resizing it), so the bevel always matches the tile's
+ * current size. */
+void
+drawdocktile(Client *c)
+{
+	GC gc;
+	int W = (int)c->w, H = (int)c->h;
+
+	if (!c->isdockapp)
+		return;
+
+	gc = XCreateGC(dpy, c->win, 0, NULL);
+
+	XSetForeground(dpy, gc, dockbg.pixel);
+	XFillRectangle(dpy, c->win, gc, 0, 0, W, H);
+
+	XSetForeground(dpy, gc, dockhi.pixel);
+	XFillRectangle(dpy, c->win, gc, 0, 0, W, 1);
+	XFillRectangle(dpy, c->win, gc, 0, 0, 1, H);
+
+	XSetForeground(dpy, gc, docklo.pixel);
+	XFillRectangle(dpy, c->win, gc, 0, H - 1, W, 1);
+	XFillRectangle(dpy, c->win, gc, W - 1, 0, 1, H);
+
+	XFreeGC(dpy, gc);
+}
+
+void
+drawdocktiles(void)
+{
+	Client *c;
+	Monitor *m;
+
+	for (m = mons; m; m = m->next)
+		for (c = m->clients; c; c = c->next)
+			drawdocktile(c);
 }
 
 void
@@ -1687,9 +1790,61 @@ manage(Window w, XWindowAttributes *wa)
 	Client *c, *t = NULL, *term = NULL;
 	Window trans = None;
 	XWindowChanges wc;
+	XWindowAttributes contentwa;
+	Window content = None;
+
+	/* DockApp tiles: any window caught by a .isdockapp rule gets wrapped
+	 * in our own bezeled background tile (drawdocktile() paints it once
+	 * mapped below). Content is the app's XWMHints icon_window if it set
+	 * one (real WindowMaker dockapp binaries), otherwise the window
+	 * itself (our own PywalDock-toolkit apps, which have no icon_window
+	 * and draw straight to their own top-level window). The tile is
+	 * auto-sized to content + 2*dockapppad on each side, so non-square
+	 * apps still get a snug frame. We copy the original window's
+	 * WM_CLASS onto the tile so external tools (wmctl, our own
+	 * positioning script) can still find it by class/instance after the
+	 * reparent — without this the tile is anonymous and un-findable.
+	 * We never touch position/size ourselves beyond this initial wrap;
+	 * an external script owns all dock layout. */
+	if (matchdockapprule(w)) {
+		XWMHints *dwmh = XGetWMHints(dpy, w);
+		if (dwmh) {
+			if ((dwmh->flags & IconWindowHint) && dwmh->icon_window != None
+			&& XGetWindowAttributes(dpy, dwmh->icon_window, &contentwa))
+				content = dwmh->icon_window;
+			XFree(dwmh);
+		}
+		if (content == None) {
+			content = w;    /* no icon_window: the app's own window is the content */
+			contentwa = *wa;
+		}
+	}
+
+	if (content != None) {
+		XClassHint ch = { NULL, NULL };
+		Window tile = XCreateSimpleWindow(dpy, root, contentwa.x, contentwa.y,
+			contentwa.width + 2 * dockapppad, contentwa.height + 2 * dockapppad, 0, 0, 0);
+		if (XGetClassHint(dpy, w, &ch)) {
+			XSetClassHint(dpy, tile, &ch);
+			if (ch.res_class)
+				XFree(ch.res_class);
+			if (ch.res_name)
+				XFree(ch.res_name);
+		}
+		XSelectInput(dpy, content, StructureNotifyMask); /* so we hear about it when the app closes */
+		XReparentWindow(dpy, content, tile, dockapppad, dockapppad);
+		XMapWindow(dpy, content);
+		contentwa.width  += 2 * dockapppad;
+		contentwa.height += 2 * dockapppad;
+		contentwa.border_width = 0;
+		w = tile;
+		wa = &contentwa;
+	}
 
 	c = ecalloc(1, sizeof(Client)); /* allocate and initialize a new Client struct to represent the window */
 	c->win = w;
+	c->isdockapp = content != None;
+	c->dockicon = content;
 	c->pid = winpid(w); /* pid used for things like swallowing */
 	/* geometry using XWindowAttributes */
 	c->x = c->oldx = wa->x;
@@ -1743,6 +1898,8 @@ manage(Window w, XWindowAttributes *wa)
 	}
 	
 	c->bw = borderpx;
+	if (c->isdockapp)
+		c->bw = 0; /* our own drawn tile bezel is the frame — an extra WM border would double it up */
 	if (maximalistmode && !c->isfullscreen && !c->nomaximalist) {
 		c->premaxbw = c->bw;
 		c->bw = 0;
@@ -1778,6 +1935,7 @@ manage(Window w, XWindowAttributes *wa)
 	c->mon->sel = c;
 	arrange(c->mon); /* recalc based on layout */
 	XMapWindow(dpy, c->win);
+	drawdocktile(c); /* must run after the map — an unmapped window won't retain the drawing */
 	if (term)
 		swallow(term, c); /* if new window is child of a terminal, replace terminal (swallow) */
 	focus(NULL); /* focus the client */
@@ -3167,6 +3325,17 @@ unmanage(Client *c, int destroyed)
 		XSetErrorHandler(xerror);
 		XUngrabServer(dpy);
 	}
+	if (c->isdockapp) {
+		/* c->win here is our own synthetic tile window, not something the
+		 * app owns — nothing to "withdraw", we just built it as a
+		 * backdrop. If the app's real window is still alive (dwm
+		 * restart/quit, not the app exiting), hand it back to root before
+		 * we tear our tile down, so the running dockapp survives with a
+		 * valid (if now unpositioned) window instead of dying with us. */
+		if (!destroyed)
+			XReparentWindow(dpy, c->dockicon, root, c->x, c->y);
+		XDestroyWindow(dpy, c->win); /* we created this tile, so we clean it up (apps clean up their own windows; the X server won't touch ours) */
+	}
 	destroynotch(c);
 	free(c); /* free memory */
 
@@ -3611,7 +3780,7 @@ wintoclient(Window w)
 
 	for (m = mons; m; m = m->next)
 		for (c = m->clients; c; c = c->next)
-			if (c->win == w)
+			if (c->win == w || c->dockicon == w)
 				return c;
 	return NULL;
 }
@@ -3692,6 +3861,7 @@ xrdb(const Arg *arg)
   for (i = 0; i < LENGTH(colors); i++)
                 scheme[i] = drw_scm_create(drw, colors[i], 3);
   updatebezelcolors(); /* re-derive relief colors — theme reload changes ColBg, so the old shades would be stale */
+  drawdocktiles(); /* repaint dockapp tile backgrounds with the new palette */
   focus(NULL);
   arrange(NULL);
   drawnotches();

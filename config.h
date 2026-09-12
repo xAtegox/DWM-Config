@@ -317,48 +317,54 @@ static const Rule rules[] = {
     {"Music Preview", NULL, NULL, 0, 1, 0, 1, -1},
     { .class = "wallpaper-picker", .isfloating = 1, .monitor = -1, .nomaximalist = 1 },
     {"Wallpaper Picker", NULL, NULL, 1, 0, -1},
-    { .class = "DockApp", .isfloating = 1, .monitor = -1, .nomaximalist = 1, .staticlabel = "DOCK", .nokill = 1, .alwayssticky = 1, .alwaysbelow = 1, .nofocus = 1, .nofullscreen = 1 },
+    { .class = "DockApp", .isfloating = 1, .monitor = -1, .nomaximalist = 1, .staticlabel = "DOCK", .nokill = 1, .alwayssticky = 1, .alwaysbelow = 1, .nofocus = 1, .nofullscreen = 1, .isdockapp = 1 },
+    /* wmnetload's real WM_CLASS is "Wmnetload" (capitalized), not "wmnetload" — matched by instance below so the tile wrap actually fires */
+    { .class = "Wmnetload", .instance = "wmnetload", .isfloating = 1, .monitor = -1, .nomaximalist = 1, .nokill = 1, .alwayssticky = 1, .alwaysbelow = 1, .nofocus = 1, .nofullscreen = 1, .isdockapp = 1 },
     {"fzfmenu", NULL, NULL, 0, 1, 1, 1, -1},
     {"mpv", NULL, NULL, 0, 1, 0, 1, -1},
     {"Nsxiv", NULL, NULL, 0, 1, 0, 1, -1},
     { .title = "WorldPainter*",      .isfloating = 1, .monitor = -1, .nomaximalist = 1, .nokill = 1, .alwayssticky = 1, .alwaysbelow = 1, .nofocus = 1, .nofullscreen = 1 },
         /* wminfo */
-    { .class = "wminfo",      .isfloating = 1, .monitor = -1, .nomaximalist = 1, .nokill = 1, .alwayssticky = 1, .alwaysbelow = 1, .nofocus = 1, .nofullscreen = 1 },
+    { .class = "wminfo",      .isfloating = 1, .monitor = -1, .nomaximalist = 1, .nokill = 1, .alwayssticky = 1, .alwaysbelow = 1, .nofocus = 1, .nofullscreen = 1, .isdockapp = 1 },
     { .title = "wminfo",      .isfloating = 1, .monitor = -1, .nomaximalist = 1, .nokill = 1, .alwayssticky = 1, .alwaysbelow = 1, .nofocus = 1, .nofullscreen = 1 },
 
     /* wmail */
-    { .class = "wmail",       .isfloating = 1, .monitor = -1, .nomaximalist = 1, .nokill = 1, .alwayssticky = 1, .alwaysbelow = 1, .nofocus = 1, .nofullscreen = 1 },
+    { .class = "wmail",       .isfloating = 1, .monitor = -1, .nomaximalist = 1, .nokill = 1, .alwayssticky = 1, .alwaysbelow = 1, .nofocus = 1, .nofullscreen = 1, .isdockapp = 1 },
     { .title = "wmail",       .isfloating = 1, .monitor = -1, .nomaximalist = 1, .nokill = 1, .alwayssticky = 1, .alwaysbelow = 1, .nofocus = 1, .nofullscreen = 1 },
 
     /* wmbatteries */
-    { .class = "wmbatteries", .isfloating = 1, .monitor = -1, .nomaximalist = 1, .nokill = 1, .alwayssticky = 1, .alwaysbelow = 1, .nofocus = 1, .nofullscreen = 1 },
+    { .class = "wmbatteries", .isfloating = 1, .monitor = -1, .nomaximalist = 1, .nokill = 1, .alwayssticky = 1, .alwaysbelow = 1, .nofocus = 1, .nofullscreen = 1, .isdockapp = 1 },
     { .title = "wmbatteries", .isfloating = 1, .monitor = -1, .nomaximalist = 1, .nokill = 1, .alwayssticky = 1, .alwaysbelow = 1, .nofocus = 1, .nofullscreen = 1 },
 
     /* WMmp */
-    { .class = "WMmp",        .isfloating = 1, .monitor = -1, .nomaximalist = 1, .nokill = 1, .alwayssticky = 1, .alwaysbelow = 1, .nofocus = 1, .nofullscreen = 1 },
+    { .class = "WMmp",        .isfloating = 1, .monitor = -1, .nomaximalist = 1, .nokill = 1, .alwayssticky = 1, .alwaysbelow = 1, .nofocus = 1, .nofullscreen = 1, .isdockapp = 1 },
     { .title = "WMmp",        .isfloating = 1, .monitor = -1, .nomaximalist = 1, .nokill = 1, .alwayssticky = 1, .alwaysbelow = 1, .nofocus = 1, .nofullscreen = 1 },
 
     /* wmmemload */
-    { .class = "wmmemload",   .isfloating = 1, .monitor = -1, .nomaximalist = 1, .nokill = 1, .alwayssticky = 1, .alwaysbelow = 1, .nofocus = 1, .nofullscreen = 1 },
+    { .class = "wmmemload",   .isfloating = 1, .monitor = -1, .nomaximalist = 1, .nokill = 1, .alwayssticky = 1, .alwaysbelow = 1, .nofocus = 1, .nofullscreen = 1, .isdockapp = 1 },
     { .title = "wmmemload",   .isfloating = 1, .monitor = -1, .nomaximalist = 1, .nokill = 1, .alwayssticky = 1, .alwaysbelow = 1, .nofocus = 1, .nofullscreen = 1 },
 
     /* wmnetload */
-    { .class = "wmnetload",   .isfloating = 1, .monitor = -1, .nomaximalist = 1, .nokill = 1, .alwayssticky = 1, .alwaysbelow = 1, .nofocus = 1, .nofullscreen = 1 },
+    { .class = "wmnetload",   .isfloating = 1, .monitor = -1, .nomaximalist = 1, .nokill = 1, .alwayssticky = 1, .alwaysbelow = 1, .nofocus = 1, .nofullscreen = 1, .isdockapp = 1 },
     { .title = "wmnetload",   .isfloating = 1, .monitor = -1, .nomaximalist = 1, .nokill = 1, .alwayssticky = 1, .alwaysbelow = 1, .nofocus = 1, .nofullscreen = 1 },
 
     /* wmcpuload */
-    { .class = "wmcpuload",   .isfloating = 1, .monitor = -1, .nomaximalist = 1, .nokill = 1, .alwayssticky = 1, .alwaysbelow = 1, .nofocus = 1, .nofullscreen = 1 },
+    { .class = "wmcpuload",   .isfloating = 1, .monitor = -1, .nomaximalist = 1, .nokill = 1, .alwayssticky = 1, .alwaysbelow = 1, .nofocus = 1, .nofullscreen = 1, .isdockapp = 1 },
     { .title = "wmcpuload",   .isfloating = 1, .monitor = -1, .nomaximalist = 1, .nokill = 1, .alwayssticky = 1, .alwaysbelow = 1, .nofocus = 1, .nofullscreen = 1 },
 
     /* wmclockmon */
-    { .class = "wmclockmon",  .isfloating = 1, .monitor = -1, .nomaximalist = 1, .nokill = 1, .alwayssticky = 1, .alwaysbelow = 1, .nofocus = 1, .nofullscreen = 1 },
+    { .class = "wmclockmon",  .isfloating = 1, .monitor = -1, .nomaximalist = 1, .nokill = 1, .alwayssticky = 1, .alwaysbelow = 1, .nofocus = 1, .nofullscreen = 1, .isdockapp = 1 },
     { .title = "wmclockmon",  .isfloating = 1, .monitor = -1, .nomaximalist = 1, .nokill = 1, .alwayssticky = 1, .alwaysbelow = 1, .nofocus = 1, .nofullscreen = 1 },
 
+    /* wmclock */ 
+    { .class = "WMClock", .isfloating = 1, .monitor = -1, .nomaximalist = 1, .nokill = 1, .alwayssticky = 1, .alwaysbelow = 1, .nofocus = 1, .nofullscreen = 1, .isdockapp = 1 },
+    { .title = "wmclock", .isfloating = 1, .monitor = -1, .nomaximalist = 1, .nokill = 1, .alwayssticky = 1, .alwaysbelow = 1, .nofocus = 1, .nofullscreen = 1 },
+
     /* wmtz */
-    { .class = "wmtz",        .isfloating = 1, .monitor = -1, .nomaximalist = 1, .nokill = 1, .alwayssticky = 1, .alwaysbelow = 1, .nofocus = 1, .nofullscreen = 1 },
+    { .class = "wmtz",        .isfloating = 1, .monitor = -1, .nomaximalist = 1, .nokill = 1, .alwayssticky = 1, .alwaysbelow = 1, .nofocus = 1, .nofullscreen = 1, .isdockapp = 1 },
     { .title = "wmtz",        .isfloating = 1, .monitor = -1, .nomaximalist = 1, .nokill = 1, .alwayssticky = 1, .alwaysbelow = 1, .nofocus = 1, .nofullscreen = 1 },
 
     /* wmweather+ */
-    { .class = "wmweather+",  .isfloating = 1, .monitor = -1, .nomaximalist = 1, .nokill = 1, .alwayssticky = 1, .alwaysbelow = 1, .nofocus = 1, .nofullscreen = 1 },
+    { .class = "wmweather+",  .isfloating = 1, .monitor = -1, .nomaximalist = 1, .nokill = 1, .alwayssticky = 1, .alwaysbelow = 1, .nofocus = 1, .nofullscreen = 1, .isdockapp = 1 },
     { .title = "wmweather+",  .isfloating = 1, .monitor = -1, .nomaximalist = 1, .nokill = 1, .alwayssticky = 1, .alwaysbelow = 1, .nofocus = 1, .nofullscreen = 1 },
 };
