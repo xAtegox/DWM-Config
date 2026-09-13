@@ -281,6 +281,7 @@ static Monitor *recttomon(int x, int y, int w, int h);
 static void resize(Client *c, int x, int y, int w, int h, int interact);
 static void resizeclient(Client *c, int x, int y, int w, int h);
 static void resizemouse(const Arg *arg);
+static void resizeedge(const Arg *arg);
 static void restack(Monitor *m);
 static void run(void);
 static void scan(void);
@@ -2326,6 +2327,58 @@ resizemouse(const Arg *arg)
 		selmon = m;
 		focus(NULL);
 	}
+}
+
+void
+resizeedge(const Arg *arg)
+{ /* keyboard edge-resize: arg->i is +/-{1,2,3,4} for the left/right/top/bottom
+   * edge, positive to grow that edge outward, negative to shrink it inward */
+	Client *c = selmon->sel;
+	int dir, edge, grow, nx, ny, nw, nh, d;
+
+	if (!c || c->isfullscreen)
+		return;
+	if (!c->isfloating && selmon->lt[selmon->sellt]->arrange)
+		togglefloating(NULL); /* same auto-float dwm already does when you drag-resize a tiled window with the mouse */
+	if (!c->isfloating)
+		return; /* still tiled (no arrange fn to float out of) - nothing sensible to resize */
+
+	dir = arg->i;
+	grow = dir > 0;
+	edge = grow ? dir : -dir;
+	nx = c->x; ny = c->y; nw = c->w; nh = c->h;
+
+	switch (edge) {
+	case 1: /* left edge */
+		if (grow) {
+			nx -= resizestep;
+			nw += resizestep;
+		} else {
+			d = MIN(resizestep, nw - 1);
+			nx += d;
+			nw -= d;
+		}
+		break;
+	case 2: /* right edge */
+		nw = grow ? nw + resizestep : MAX(nw - resizestep, 1);
+		break;
+	case 3: /* top edge */
+		if (grow) {
+			ny -= resizestep;
+			nh += resizestep;
+		} else {
+			d = MIN(resizestep, nh - 1);
+			ny += d;
+			nh -= d;
+		}
+		break;
+	case 4: /* bottom edge */
+		nh = grow ? nh + resizestep : MAX(nh - resizestep, 1);
+		break;
+	default:
+		return;
+	}
+	resize(c, nx, ny, nw, nh, 1);
 }
 
 void

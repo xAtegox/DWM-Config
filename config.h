@@ -10,6 +10,7 @@ static const int notchbezello = -22; // % darken applied to notch ColBg for the 
 static const unsigned int dockapppad = 2; // px of pywal-bezeled tile shown around a wrapped real dockapp's icon window
 static const int dockclearance = 67; // Width reserved on the right edge for the dockapp column while Maximalist Mode is on
 static const double maximalistresizestep = 0.20; // Percentage (as decimal) resizemaximalist() grows/shrinks the focused window by in Maximalist Mode
+static const int resizestep = 20; // pixels resizeedge() grows/shrinks a floating window's edge by per keypress (arrow keys)
 static unsigned int snap = 3;                  // distance to screen edge where windows snap
 static const unsigned int gappih = 20;         // horizontal gap between windows (inner)
 static const unsigned int gappiv = 20;         // vertical gap between windows (inner)
@@ -144,6 +145,14 @@ static const Key keys[] = {
     {MODKEY,                             XK_l,            movecorner,       {.f = +0.05}},       // maximalist: next corner / tiling: increrase master area
     {MODKEY | ShiftMask,                 XK_m,            resizemaximalist, {.f = +1}},          // maximalist: grow focused window by maximalistresizestep
     {MODKEY | ControlMask,               XK_m,            resizemaximalist, {.f = -1}},          // maximalist: shrink focused window by maximalistresizestep
+    {MODKEY | ControlMask,               XK_Right,        resizeedge,       {.i = +2}},          // ctrl: expand right edge outward
+    {MODKEY | ControlMask,               XK_Left,         resizeedge,       {.i = -2}},          // ctrl: shrink right edge back in
+    {MODKEY | ControlMask,               XK_Down,         resizeedge,       {.i = +4}},          // ctrl: expand bottom edge outward
+    {MODKEY | ControlMask,               XK_Up,           resizeedge,       {.i = -4}},          // ctrl: shrink bottom edge back in
+    {MODKEY | ShiftMask,                 XK_Left,         resizeedge,       {.i = +1}},          // shift: expand left edge outward
+    {MODKEY | ShiftMask,                 XK_Right,        resizeedge,       {.i = -1}},          // shift: shrink left edge back in
+    {MODKEY | ShiftMask,                 XK_Up,           resizeedge,       {.i = +3}},          // shift: expand top edge outward
+    {MODKEY | ShiftMask,                 XK_Down,         resizeedge,       {.i = -3}},          // shift: shrink top edge back in
     {MODKEY | ControlMask | ShiftMask,   XK_f,            togglefocusonhover, {0}},              // Toggle focus-follows-hover on/off (persists across reboots)
     {MODKEY,                             XK_r,            keyshade, {0}},                        // TOGGLE SHADE (rolls the notch up/down, same as double-clicking it)
     {MODKEY,                             XK_0,            view,             {.ui = ~0}},         // View All Tags
