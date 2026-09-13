@@ -21,6 +21,7 @@
  * To understand everything else, start reading main().
  */
 #include <errno.h>
+#include <limits.h>
 #include <locale.h>
 #include <signal.h>
 #include <stdarg.h>
@@ -321,6 +322,7 @@ static void savefocushoverstate(void);
 static void restorefocushover(void);
 static void mkdirp(char *path);
 static void restoreviewtags(void);
+static void restoreorder(void);
 static void togglesticky(const Arg *arg);
 static void toggleshade(Client *c);
 static void keyshade(const Arg *arg);
@@ -401,6 +403,8 @@ static Monitor *mons, *selmon;
 static Window root, wmcheckwin;
 static Atom tagsatom;
 static Atom viewtagatom;
+static Atom stateatom; /* stashes isfloating + geometry on each client so a restart doesn't drop it back into the tiling grid */
+static Atom orderatom; /* stashes each client's position in its monitor's tiling order so a restart doesn't reshuffle master/stack */
 static int maximalistmode = 0;
 static int focusonhover = 1; /* if 0, enternotify() tracks which monitor the pointer is on but never steals focus by hovering a window */
 static pid_t maximalistpid = -1;
@@ -1878,6 +1882,24 @@ manage(Window w, XWindowAttributes *wa)
 			XFree(data);
 		}
 	}
+	{ /* same for floating state + geometry, so this window lands right back where it was instead of snapping into the tile grid */
+		Atom type;
+		int format;
+		unsigned long nitems, extra;
+		unsigned char *data = NULL;
+		if (XGetWindowProperty(dpy, w, stateatom, 0, 5, False, XA_CARDINAL,
+			&type, &format, &nitems, &extra, &data) == Success && data) {
+			if (nitems == 5) {
+				long *sd = (long *)data;
+				c->isfloating = sd[0];
+				c->x = sd[1];
+				c->y = sd[2];
+				c->w = sd[3];
+				c->h = sd[4];
+			}
+			XFree(data);
+		}
+	}
 	if (!c->isfloating)
 		c->isfloating = c->oldstate = trans != None || c->isfixed;
 	c->wasfloating = c->isfloating;
@@ -2171,12 +2193,31 @@ quit(const Arg *arg)
 	if (arg->i) { /* restarting, not exiting: stash each client's tag on its own window to survive the re-exec */
 		long data;
 		long viewdata[32];
+		long statedata[5];
+		long orderdata, order = 0;
 		int n = 0;
 		for (m = mons; m; m = m->next) {
 			for (c = m->clients; c; c = c->next) {
 				data = c->tags;
 				XChangeProperty(dpy, c->win, tagsatom, XA_CARDINAL, 32,
 					PropModeReplace, (unsigned char *)&data, 1);
+
+				/* also stash floating state + geometry, so a manually-floated
+				 * window doesn't fall back into the tiling grid on restart */
+				statedata[0] = c->isfloating;
+				statedata[1] = c->x;
+				statedata[2] = c->y;
+				statedata[3] = c->w;
+				statedata[4] = c->h;
+				XChangeProperty(dpy, c->win, stateatom, XA_CARDINAL, 32,
+					PropModeReplace, (unsigned char *)statedata, 5);
+
+				/* and its position in the tiling order, so master/stack
+				 * roles come back the way they were instead of being
+				 * rebuilt from whatever order X hands windows back in */
+				orderdata = order++;
+				XChangeProperty(dpy, c->win, orderatom, XA_CARDINAL, 32,
+					PropModeReplace, (unsigned char *)&orderdata, 1);
 			}
 			if (n < 32)
 				viewdata[n++] = m->tagset[m->seltags];
@@ -2628,6 +2669,8 @@ setup(void)
 	wmatom[WMTakeFocus] = XInternAtom(dpy, "WM_TAKE_FOCUS", False);
 	tagsatom = XInternAtom(dpy, "_DWM_TAGS", False);
 	viewtagatom = XInternAtom(dpy, "_DWM_VIEWTAG", False);
+	stateatom = XInternAtom(dpy, "_DWM_STATE", False);
+	orderatom = XInternAtom(dpy, "_DWM_ORDER", False);
 	netatom[NetActiveWindow] = XInternAtom(dpy, "_NET_ACTIVE_WINDOW", False);
 	netatom[NetSupported] = XInternAtom(dpy, "_NET_SUPPORTED", False);
 	netatom[NetWMName] = XInternAtom(dpy, "_NET_WM_NAME", False);
@@ -3246,6 +3289,58 @@ restoreviewtags(void)
 	}
 	focus(NULL);
 	arrange(NULL);
+}
+
+void
+restoreorder(void)
+{ /* called once after scan(), before anything arranges: puts each monitor's
+   * client list back in its pre-restart master/stack order instead of
+   * leaving it in whatever order XQueryTree happened to hand windows back in */
+	Monitor *m;
+	Client *c, **arr;
+	long *keys;
+	Atom type;
+	int format, i, n;
+	unsigned long nitems, extra;
+	unsigned char *data;
+
+	for (m = mons; m; m = m->next) {
+		for (n = 0, c = m->clients; c; c = c->next, n++);
+		if (n < 2)
+			continue; /* nothing to reorder */
+		arr = ecalloc(n, sizeof(Client *));
+		keys = ecalloc(n, sizeof(long));
+		for (i = 0, c = m->clients; c; c = c->next, i++) {
+			arr[i] = c;
+			keys[i] = LONG_MAX; /* no stashed order (newly opened since the restart): sorts after every restored client */
+			data = NULL;
+			if (XGetWindowProperty(dpy, c->win, orderatom, 0, 1, False, XA_CARDINAL,
+				&type, &format, &nitems, &extra, &data) == Success && data) {
+				if (nitems)
+					keys[i] = *(long *)data;
+				XFree(data);
+			}
+		}
+		/* stable insertion sort by stashed order; n is just the open window count on this monitor */
+		for (i = 1; i < n; i++) {
+			Client *cc = arr[i];
+			long kk = keys[i];
+			int j = i - 1;
+			while (j >= 0 && keys[j] > kk) {
+				arr[j + 1] = arr[j];
+				keys[j + 1] = keys[j];
+				j--;
+			}
+			arr[j + 1] = cc;
+			keys[j + 1] = kk;
+		}
+		m->clients = arr[0];
+		for (i = 0; i < n - 1; i++)
+			arr[i]->next = arr[i + 1];
+		arr[n - 1]->next = NULL;
+		free(arr);
+		free(keys);
+	}
 }
 
 void
@@ -3904,6 +3999,7 @@ main(int argc, char *argv[])
 		die("pledge");
 #endif /* __OpenBSD__ */
 	scan(); /* see if other applications are already running */
+	restoreorder(); /* put each monitor's clients back in their pre-restart master/stack order */
 	restoremaximalist(); /* re-enable maximalist mode if it was on before a restart */
 	restorefocushover(); /* load the persisted focus-on-hover setting */
 	restoreviewtags(); /* re-show the tag each monitor was actually viewing before a restart */
