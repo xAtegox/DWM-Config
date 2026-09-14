@@ -10,7 +10,7 @@ static const int notchbezello = -22; // % darken applied to notch ColBg for the 
 static const unsigned int dockapppad = 2; // px of pywal-bezeled tile shown around a wrapped real dockapp's icon window
 static const int dockclearance = 67; // Width reserved on the right edge for the dockapp column while Maximalist Mode is on
 static const double maximalistresizestep = 0.20; // Percentage (as decimal) resizemaximalist() grows/shrinks the focused window by in Maximalist Mode
-static const int resizestep = 20; // pixels resizeedge() grows/shrinks a floating window's edge by per keypress (arrow keys)
+static const int resizestep = 10; // pixels resizeedge() grows/shrinks a floating window's edge by per keypress (arrow keys)
 static unsigned int snap = 3;                  // distance to screen edge where windows snap
 static const unsigned int gappih = 20;         // horizontal gap between windows (inner)
 static const unsigned int gappiv = 20;         // vertical gap between windows (inner)
@@ -263,6 +263,8 @@ static const Button buttons[] = {
 static const char *const autostart[] = {
 	/* wallpaper restore */
 	"/bin/sh", "-c", "wal -R && feh --bg-fill \"$(<" HOME "/.cache/wal/wal)\"", NULL,
+  /* disable touchpad DWT for gaming */
+	"/bin/sh", "-c", "xinput set-prop \"$(xinput list --id-only 'ASCP1200:00 093A:3016 Touchpad')\" 'libinput Disable While Typing Enabled' 0", NULL,
 	/* compositor */
 	"picom", "--config", HOME "/.config/picom/picom.conf", NULL,
 	/* statusbar */
@@ -308,31 +310,18 @@ static const char *const maximalistcmd[] = {
  * but never a notch on that app specifically.
  * ------------------------------------------------------------------------------*/
 static const Rule rules[] = {
-    { .class = "music-cover", .isfloating = 1, .monitor = -1, .nomaximalist = 1 },
-    { .title = "Music", .isfloating = 1, .monitor = -1, .nomaximalist = 1 },
     { .class = "Qmmp", .isfloating = 1, .monitor = -1, .nomaximalist = 1 },
     { .title = "Qmmp", .isfloating = 1, .monitor = -1, .nomaximalist = 1 },
-    { "music-cover", NULL, NULL, 0, 1, 1, 0, 0, 0, 0, 0 },
-    {"neofetch",          NULL,         "Welcome",      0, 1, 1, 0, -1},
-    {"st-256color",       NULL,         NULL,           0, 0, 1, 0, -1},
-    {"fzfmenu",           NULL,         NULL,           0, 1, 1, 1, -1},
-    {"mpv",               NULL,         NULL,           0, 1, 0, 1, -1},
-    {"Nsxiv",             NULL,         NULL,           0, 1, 0, 1, -1},
+    { .class = "Qmmp",       .title = "Qmmp",      .isfloating = 1, .monitor = -1, .nomaximalist = 1 },
+    { .class = "Qmmp",       .title = "Playlist",  .isfloating = 1, .monitor = -1, .nomaximalist = 1 },
+    { .class = "Qmmp",       .title = "Equalizer", .isfloating = 1, .monitor = -1, .nomaximalist = 1 },
     {NULL, NULL, "emacs-everywhere", 0, 1, 0, 1, -1},
     {NULL, NULL, "CamPreview", 0, 1, -1},
-    {"wal-picker", NULL, NULL, 0, 1, 0, 1, -1},
     {"NULL", NULL, "Emacs Client", 0, 1, -1},
     {NULL, NULL, "Powermenu", 0, 1, -1},
-    {"Music Preview", NULL, NULL, 0, 1, 0, 1, -1},
-    { .class = "wallpaper-picker", .isfloating = 1, .monitor = -1, .nomaximalist = 1 },
-    {"Wallpaper Picker", NULL, NULL, 1, 0, -1},
     { .class = "DockApp", .isfloating = 1, .monitor = -1, .nomaximalist = 1, .staticlabel = "DOCK", .nokill = 1, .alwayssticky = 1, .alwaysbelow = 1, .nofocus = 1, .nofullscreen = 1, .isdockapp = 1 },
     /* wmnetload's real WM_CLASS is "Wmnetload" (capitalized), not "wmnetload" — matched by instance below so the tile wrap actually fires */
     { .class = "Wmnetload", .instance = "wmnetload", .isfloating = 1, .monitor = -1, .nomaximalist = 1, .nokill = 1, .alwayssticky = 1, .alwaysbelow = 1, .nofocus = 1, .nofullscreen = 1, .isdockapp = 1 },
-    {"fzfmenu", NULL, NULL, 0, 1, 1, 1, -1},
-    {"mpv", NULL, NULL, 0, 1, 0, 1, -1},
-    {"Nsxiv", NULL, NULL, 0, 1, 0, 1, -1},
-    { .title = "WorldPainter*",      .isfloating = 1, .monitor = -1, .nomaximalist = 1, .nokill = 1, .alwayssticky = 1, .alwaysbelow = 1, .nofocus = 1, .nofullscreen = 1 },
         /* wminfo */
     { .class = "wminfo",      .isfloating = 1, .monitor = -1, .nomaximalist = 1, .nokill = 1, .alwayssticky = 1, .alwaysbelow = 1, .nofocus = 1, .nofullscreen = 1, .isdockapp = 1 },
     { .title = "wminfo",      .isfloating = 1, .monitor = -1, .nomaximalist = 1, .nokill = 1, .alwayssticky = 1, .alwaysbelow = 1, .nofocus = 1, .nofullscreen = 1 },
