@@ -1125,7 +1125,7 @@ ensurenotchroom(Client *c)
 	if (!maximalistmode || !c->twin || c->isfullscreen)
 		return;
 
-	miny = c->mon->my + (int)gappov + bh + 2 * maximalistborderpx; /* leave room for the notch (plus its own border) above the window — same topmargin formula movecorner()/resizemaximalist() use, was missing gappov here */
+	miny = c->mon->my + bh + 2 * maximalistborderpx; /* leave room for the notch (plus its own border) above the window */
 	if (c->y < miny)
 		resize(c, c->x, miny, c->w, c->h, 0); /* triggers resizeclient() -> updatenotchpos() */
 	else
