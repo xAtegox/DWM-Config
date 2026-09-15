@@ -293,8 +293,8 @@ static const char *const autostart[] = {
   "/bin/sh", "-c", "exec emacs --daemon", NULL,
   /* numlock */
 	"/bin/sh", "-c", "xset r rate 150 50", NULL,
-  /* wmmp dockapp (controls qmmp via bridge) */
-	"/bin/sh", "-c", "exec " HOME "/.config/scripts/wmmp-qmmp", NULL,
+  /* wmmp dockapp: bridge daemon in bg, WMmp itself is spawned by wm-dock.sh */
+	"/bin/sh", "-c", "setsid " HOME "/.config/scripts/wmmp-qmmp-bridge.py 6601 >/dev/null 2>&1 &", NULL,
 	NULL /* terminate autostart apps when dwm closes */
 };
 
