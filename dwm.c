@@ -238,6 +238,7 @@ static void drawdocktiles(void);
 static int matchdockapprule(Window w);
 static int isqmmp(Client *c);
 static void maybefloat(Client *c);
+static void applyopacity(Client *c);
 static void destroynotify(XEvent *e);
 static void destroynotch(Client *c);
 static void detach(Client *c);
@@ -1816,6 +1817,49 @@ loadxrdb(void)
   XCloseDisplay(display);
 }
 
+/* Apply the saved transparency state (85% when transparent, 100% when
+ * opaque) to newly managed kitty/st windows, mirroring what the
+ * toggle-kitty-opacity script does. State comes from the same files
+ * emacs reads. */
+void
+applyopacity(Client *c)
+{
+	FILE *f;
+	unsigned long opacity;
+	const char *class, *instance;
+	XClassHint ch = { NULL, NULL };
+
+	if (!c)
+		return;
+	XGetClassHint(dpy, c->win, &ch);
+	class    = ch.res_class ? ch.res_class : broken;
+	instance = ch.res_name  ? ch.res_name  : broken;
+	if (!strstr(class, "kitty") && !strstr(instance, "kitty") &&
+	    !strstr(class, "st-256color") && !strstr(class, "st") &&
+	    !strstr(instance, "st")) {
+		if (ch.res_class)
+			XFree(ch.res_class);
+		if (ch.res_name)
+			XFree(ch.res_name);
+		return;
+	}
+	if (ch.res_class)
+		XFree(ch.res_class);
+	if (ch.res_name)
+		XFree(ch.res_name);
+
+	opacity = 85UL * 42949672; /* default: transparent */
+	f = fopen("/tmp/transparency-state", "r");
+	if (f) {
+		char buf[32];
+		if (fgets(buf, sizeof buf, f) && strstr(buf, "opaque"))
+			opacity = 100UL * 42949672;
+		fclose(f);
+	}
+	XChangeProperty(dpy, c->win, XInternAtom(dpy, "_NET_WM_WINDOW_OPACITY", False),
+	                XA_CARDINAL, 32, PropModeReplace, (unsigned char *)&opacity, 1);
+}
+
 void
 manage(Window w, XWindowAttributes *wa)
 { /* after a window is passed from maprequest, manage determines how to treat it and add it to the stack */
@@ -1994,6 +2038,7 @@ manage(Window w, XWindowAttributes *wa)
 		c->mon->sel = c;
 	}
 	arrange(c->mon); /* recalc based on layout */
+	applyopacity(c); /* set saved transparency on new kitty/st windows */
 	XMapWindow(dpy, c->win);
 	drawdocktile(c); /* must run after the map — an unmapped window won't retain the drawing */
 	if (term)
