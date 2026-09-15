@@ -293,6 +293,8 @@ static const char *const autostart[] = {
   "/bin/sh", "-c", "exec emacs --daemon", NULL,
   /* numlock */
 	"/bin/sh", "-c", "xset r rate 150 50", NULL,
+  /* wmmp dockapp (controls qmmp via bridge) */
+	"/bin/sh", "-c", "exec " HOME "/.config/scripts/wmmp-qmmp", NULL,
 	NULL /* terminate autostart apps when dwm closes */
 };
 
