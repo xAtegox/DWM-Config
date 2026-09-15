@@ -21,9 +21,8 @@ fi
 
 # Collect windows
 kitty_windows=$(xdotool search --class "kitty" 2>/dev/null)
-st_windows=$(xdotool search --class "st-256color" 2>/dev/null)
 emacs_windows=$(xdotool search --class "Emacs" 2>/dev/null)
-all_windows=$(printf "%s\n%s" "$kitty_windows" "$st_windows" "$emacs_windows" | grep -v '^$')
+all_windows=$(printf "%s\n%s" "$kitty_windows" "$emacs_windows" | grep -v '^$')
 if [ -z "$all_windows" ]; then
 	exit 1
 fi
@@ -42,7 +41,7 @@ else
 	cp "$STATE" "$PERSISTENT"
 fi
 
-# Apply to kitty + st + emacs
+# Apply to kitty + emacs
 echo "$all_windows" | while read -r window_id; do
 	xprop -id "$window_id" \
 		-f _NET_WM_WINDOW_OPACITY 32c \

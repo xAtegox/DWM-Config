@@ -1834,9 +1834,7 @@ applyopacity(Client *c)
 	XGetClassHint(dpy, c->win, &ch);
 	class    = ch.res_class ? ch.res_class : broken;
 	instance = ch.res_name  ? ch.res_name  : broken;
-	if (!strstr(class, "kitty") && !strstr(instance, "kitty") &&
-	    !strstr(class, "st-256color") && !strstr(class, "st") &&
-	    !strstr(instance, "st")) {
+	if (!strstr(class, "kitty") && !strstr(instance, "kitty")) {
 		if (ch.res_class)
 			XFree(ch.res_class);
 		if (ch.res_name)
