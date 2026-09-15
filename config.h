@@ -273,6 +273,8 @@ static const char *const autostart[] = {
 	"/bin/sh", "-c", "exec " HOME "/.config/scripts/theme-restore", NULL,
 	/* numlock */
 	"/bin/sh", "-c", "numlockx on", NULL,
+  /* dunst */
+	"/bin/sh", "-c", "dunst", NULL,
 	/* dark mode */
 	"/bin/sh", "-c", "gsettings set org.gnome.desktop.interface color-scheme 'prefer-dark'", NULL,
 	/* pre-clear dwmblocks signal */

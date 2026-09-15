@@ -62,7 +62,7 @@
                                * MAX(0, MIN((y)+(h),(m)->wy+(m)->wh) - MAX((y),(m)->wy)))
 #define ISINC(X)                ((X) > 1000 && (X) < 3000)
 #define ISVISIBLE(C)            ((C->tags & C->mon->tagset[C->mon->seltags]) || C->issticky)
-#define ISFOCUSABLE(C)          (ISVISIBLE(C) && !C->nofocus) /* like ISVISIBLE, but excludes nofocus clients (dockapps) from stack cycling */
+#define ISFOCUSABLE(C)          (ISVISIBLE(C) && !C->nofocus && !isqmmp(C)) /* like ISVISIBLE, but excludes nofocus clients (dockapps) and qmmp windows from stack cycling */
 #define PREVSEL                 3000
 #define MOD(N,M)                ((N)%(M) < 0 ? (N)%(M) + (M) : (N)%(M))
 #define MOUSEMASK               (BUTTONMASK|PointerMotionMask)
@@ -236,6 +236,7 @@ static void updatebezelcolors(void);
 static void drawdocktile(Client *c);
 static void drawdocktiles(void);
 static int matchdockapprule(Window w);
+static int isqmmp(Client *c);
 static void maybefloat(Client *c);
 static void destroynotify(XEvent *e);
 static void destroynotch(Client *c);
@@ -482,6 +483,32 @@ matchdockapprule(Window w)
 	return match;
 }
 
+/* hardcoded qmmp detection (not driven by config.h rules): qmmp sets its
+ * WM_CLASS late, after the window is already mapped, so this is consulted
+ * both at manage()-time and whenever a WM_CLASS PropertyNotify fires.
+ * Every qmmp window (main player, playlist, equalizer, dialogs) carries
+ * the same class, so this covers all of them. */
+int
+isqmmp(Client *c)
+{
+	const char *class = NULL, *instance = NULL;
+	XClassHint ch = { NULL, NULL };
+	int is = 0;
+
+	if (!c)
+		return 0;
+	XGetClassHint(dpy, c->win, &ch);
+	class    = ch.res_class ? ch.res_class : broken;
+	instance = ch.res_name  ? ch.res_name  : broken;
+	is = strstr(class, "Qmmp") || strstr(class, "qmmp") ||
+	     strstr(instance, "Qmmp") || strstr(instance, "qmmp");
+	if (ch.res_class)
+		XFree(ch.res_class);
+	if (ch.res_name)
+		XFree(ch.res_name);
+	return is;
+}
+
 void
 applyrules(Client *c)
 {
@@ -588,9 +615,9 @@ maybefloat(Client *c)
 			} else {
 				resize(c, c->initx, c->inity, c->initw, c->inith, 0);
 			}
-			if (!c->twin && !c->nomaximalist && !c->nonotch)
+			if (!c->twin && !c->nomaximalist && !c->nonotch && !isqmmp(c))
 				createnotch(c);
-			else if (c->twin && (c->nomaximalist || c->nonotch))
+			else if (c->twin && (c->nomaximalist || c->nonotch || isqmmp(c)))
 				destroynotch(c);
 			arrange(c->mon);
 			break;
@@ -1065,8 +1092,8 @@ createnotch(Client *c)
 		.event_mask = ButtonPressMask|ExposureMask
 	};
 
-	if (c->nomaximalist || c->nonotch)
-		return; /* excluded via Rule.nomaximalist or Rule.nonotch: no notch, ever */
+	if (c->nomaximalist || c->nonotch || isqmmp(c))
+		return; /* excluded via Rule.nomaximalist / Rule.nonotch, or hardcoded qmmp: no notch, ever */
 
 	c->twin = XCreateWindow(dpy, root, c->x, c->y - bh, MAX((int)c->w, 1), bh, 0,
 		DefaultDepth(dpy, screen), CopyFromParent, DefaultVisual(dpy, screen),
@@ -1961,15 +1988,20 @@ manage(Window w, XWindowAttributes *wa)
 	setclientstate(c, NormalState);
 	if(selmon->sel && selmon->sel->isfullscreen && !c->isfloating) /* if a fullscreen window was focused, toggle fullscreen */
 		setfullscreen(selmon->sel, 0);
-	if (c->mon == selmon)
-		unfocus(selmon->sel, 0); /* unfocus other monitor if new window is on current monitor */
-	c->mon->sel = c;
+	if (!isqmmp(c)) { /* qmmp windows never steal focus on startup */
+		if (c->mon == selmon)
+			unfocus(selmon->sel, 0); /* unfocus other monitor if new window is on current monitor */
+		c->mon->sel = c;
+	}
 	arrange(c->mon); /* recalc based on layout */
 	XMapWindow(dpy, c->win);
 	drawdocktile(c); /* must run after the map — an unmapped window won't retain the drawing */
 	if (term)
 		swallow(term, c); /* if new window is child of a terminal, replace terminal (swallow) */
-	focus(NULL); /* focus the client */
+	if (isqmmp(c))
+		focus(selmon->sel); /* keep focus on whatever was focused before qmmp appeared */
+	else
+		focus(NULL); /* focus the client */
 }
 
 void
