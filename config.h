@@ -3,7 +3,7 @@
  * ==========================================================================*/
 
 /* ---------------------------- appearance --------------------------------- */
-static unsigned int borderpx = 1;              // window border pixel width
+static unsigned int borderpx = 0;              // window border pixel width
 static const unsigned int maximalistborderpx = 2; // border width used in Maximalist Mode
 static const int notchbezelhi = 14;  // % lighten applied to notch ColBg for the top/left highlight line
 static const int notchbezello = -22; // % darken applied to notch ColBg for the bottom/right shadow line
@@ -39,7 +39,7 @@ static char normfgcolor[]     = "#B5976E";
 static char selfgcolor[]      = "#1f1c14";
 static char selbordercolor[]  = "#928c82";
 static char selbgcolor[]      = "#B5976E";
-static char termbgcolor[]     = "#1f1c14"; // mirrors *.background (the resource terminals read) via loadxrdb(); keeps the unfocused notch the same color as terminal backgrounds
+static char termbgcolor[]     = "#1f1c14";
 
 // Colours if xrdb is loaded
 static char *colors[][3] = {
@@ -61,6 +61,7 @@ static char *colors[][3] = {
 #define SHCMD(cmd) { .v = (const char*[]){ "/bin/sh", "-c", cmd, NULL } }
 static const char maximaliststatefile[] = HOME "/.cache/dwm/maximalist_state"; // stores Maximalist Mode on/off so it survives reboots, not just dwm restarts
 static const char focushoverstatefile[] = HOME "/.cache/dwm/focusonhover_state"; // stores the focus-on-hover setting so it survives reboots
+static const char spawnmaxstatefile[] = HOME "/.cache/dwm/spawnmax_state"; // stores the spawn-at-max-size toggle so it survives reboots
 
 /* ---------------------------- tags ---------------------------------------- */
 static const char *tags[] = {"1", "2", "3", "4", "5", "6", "7", "8", "9"};
@@ -164,6 +165,7 @@ static const Key keys[] = {
     {MODKEY | ControlMask,               XK_x,            xrdb,             {.v = NULL}},        // Refresh Xrdb Colours, DO NOT CHANGE
     {MODKEY,                             XK_f,            togglefullscreen, {0}},                // Toggle Fulscreen
     {MODKEY | ControlMask | ShiftMask,   XK_m,            togglemaximalist, {0}},                // Toggle Maximalist Mode (WindowMaker Mode)
+    {MODKEY | Mod1Mask,                  XK_m,            togglespawnmax,   {0}},                // Toggle spawn-at-max-size: new windows in Maximalist Mode open at their maximum size (persists across reboots)
 //  {MODKEY,                             XK_k,            setlayout,        {.v = &layouts[1]}}, // Tile Layout
 //  {MODKEY | ShiftMask | ControlMask,   XK_k,            setlayout,        {.v = &layouts[2]}}, // Monocle Layout
 //  {MODKEY | ShiftMask,                 XK_k,            setlayout,        {.v = &layouts[3]}}, // Spiral Layout
@@ -264,7 +266,7 @@ static const char *const autostart[] = {
 	/* wallpaper restore */
 	"/bin/sh", "-c", "wal -R && feh --bg-fill \"$(<" HOME "/.cache/wal/wal)\"", NULL,
   /* disable touchpad DWT for gaming */
-	"/bin/sh", "-c", "xinput set-prop \"$(xinput list --id-only 'ASCP1200:00 093A:3016 Touchpad')\" 'libinput Disable While Typing Enabled' 0", NULL,
+	"/bin/sh", "-c", "xinput set-prop 'ASCP1200:00 093A:3016 Touchpad' 'libinput Disable While Typing Enabled' 0", NULL,
 	/* compositor */
 	"picom", "--config", HOME "/.config/picom/picom.conf", NULL,
 	/* statusbar */
@@ -314,6 +316,7 @@ static const char *const maximalistcmd[] = {
  * but never a notch on that app specifically.
  * ------------------------------------------------------------------------------*/
 static const Rule rules[] = {
+    { .title = "screenkey", .isfloating = 1, .monitor = -1, .nomaximalist = 1, .nofocus = 1, .alwaysbelow = 1},
     { .class = "Qmmp", .isfloating = 1, .monitor = -1, .nomaximalist = 1 },
     { .title = "Qmmp", .isfloating = 1, .monitor = -1, .nomaximalist = 1 },
     { .class = "Qmmp",       .title = "Qmmp",      .isfloating = 1, .monitor = -1, .nomaximalist = 1 },

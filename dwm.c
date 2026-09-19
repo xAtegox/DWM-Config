@@ -323,6 +323,9 @@ static void savemaximaliststate(void);
 static void togglefocusonhover(const Arg *arg);
 static void savefocushoverstate(void);
 static void restorefocushover(void);
+static void togglespawnmax(const Arg *arg);
+static void savespawnmaxstate(void);
+static void restorespawnmax(void);
 static void mkdirp(char *path);
 static void restoreviewtags(void);
 static void restoreorder(void);
@@ -409,6 +412,7 @@ static Atom viewtagatom;
 static Atom stateatom; /* stashes isfloating + geometry on each client so a restart doesn't drop it back into the tiling grid */
 static Atom orderatom; /* stashes each client's position in its monitor's tiling order so a restart doesn't reshuffle master/stack */
 static int maximalistmode = 0;
+static int spawnmax = 0; /* 1 = newly managed windows open at max size while Maximalist Mode is on */
 static int focusonhover = 1; /* if 0, enternotify() tracks which monitor the pointer is on but never steals focus by hovering a window */
 static pid_t maximalistpid = -1;
 
@@ -1996,6 +2000,22 @@ manage(Window w, XWindowAttributes *wa)
 	}
 	}
 
+	/* spawn-at-max-size (toggled with Win+Alt+M): when Maximalist Mode is on and
+	 * the toggle is enabled, override the requested geometry with the maximum
+	 * usable size — the same bounds resizemaximalist() caps out at when you
+	 * grow a window with mod+shift+m, including gaps and dock clearance. This is
+	 * computed directly, no fake keypresses involved. */
+	if (spawnmax && maximalistmode && !c->isfullscreen && !c->nomaximalist && !c->isdockapp) {
+		int maxw, maxh, topmargin;
+		topmargin = gappov + bh + 2 * (int)maximalistborderpx;
+		maxw = MAX(c->mon->ww - 2 * gappoh - dockclearance, 1);
+		maxh = MAX(c->mon->wh - topmargin - gappov, 1);
+		c->w = maxw;
+		c->h = maxh;
+		c->x = c->mon->wx + (c->mon->ww - dockclearance - maxw) / 2;
+		c->y = c->mon->wy + topmargin + (MAX(c->mon->wh - topmargin - gappov, 1) - maxh) / 2;
+	}
+
 	c->bw = borderpx;
 	if (c->isdockapp)
 		c->bw = 0; /* our own drawn tile bezel is the frame — an extra WM border would double it up */
@@ -3405,6 +3425,45 @@ restorefocushover(void)
 }
 
 void
+togglespawnmax(const Arg *arg)
+{
+	spawnmax = !spawnmax;
+	savespawnmaxstate();
+}
+
+void
+savespawnmaxstate(void)
+{
+	char dir[512];
+	char *slash;
+	FILE *f;
+
+	strncpy(dir, spawnmaxstatefile, sizeof dir - 1);
+	dir[sizeof dir - 1] = '\0';
+	if ((slash = strrchr(dir, '/')))
+		*slash = '\0';
+	mkdirp(dir);
+
+	if ((f = fopen(spawnmaxstatefile, "w"))) {
+		fprintf(f, "%d\n", spawnmax);
+		fclose(f);
+	}
+}
+
+void
+restorespawnmax(void)
+{
+	FILE *f;
+	int state = 0;
+
+	if ((f = fopen(spawnmaxstatefile, "r"))) {
+		fscanf(f, "%d", &state);
+		fclose(f);
+	}
+	spawnmax = state; /* defaults to off (0) if the state file doesn't exist yet */
+}
+
+void
 restoreviewtags(void)
 {
 	Atom type;
@@ -4138,6 +4197,7 @@ main(int argc, char *argv[])
 	restoreorder(); /* put each monitor's clients back in their pre-restart master/stack order */
 	restoremaximalist(); /* re-enable maximalist mode if it was on before a restart */
 	restorefocushover(); /* load the persisted focus-on-hover setting */
+	restorespawnmax(); /* load the persisted spawn-at-max-size toggle */
 	restoreviewtags(); /* re-show the tag each monitor was actually viewing before a restart */
 	run(); /* main event loop of dwm -->
 * continuously listens to events from the X server (window changes, key presses, mouse) 

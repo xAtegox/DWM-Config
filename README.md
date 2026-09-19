@@ -53,6 +53,7 @@ dwm is primarily operated through keyboard shortcuts. The most important control
 | `Mod + Shift + Space` | Toggle floating                  |
 | `Mod + F`             | Toggle fullscreen                |
 | `Mod + Shift + M`     | Toggle Maximalist Mode           |
+| `Mod + Alt + M`       | Toggle spawn-at-max-size         |
 
 ---
 
@@ -145,9 +146,10 @@ The default gap configuration is:
 
 It is intended to combine dwm's window management with the traditional floating desktop and DockApp workflow associated with WindowMaker.
 
-| Keybind           | Action                 |
-| ----------------- | ---------------------- |
-| `Mod + Shift + M` | Toggle Maximalist Mode |
+| Keybind           | Action                       |
+| ----------------- | ---------------------------- |
+| `Mod + Shift + M` | Toggle Maximalist Mode       |
+| `Mod + Alt + M`   | Toggle spawn-at-max-size     |
 
 When enabled, dwm launches:
 
@@ -407,6 +409,7 @@ Mod + Ctrl + Shift + Q
 | `Mod + [ / ]`              | Change monitor               |
 | `Mod + Shift + [ / ]`      | Move window between monitors |
 | `Mod + Shift + M`          | Maximalist Mode              |
+| `Mod + Alt + M`            | Toggle spawn-at-max-size     |
 | `Mod + Ctrl + B`           | Toggle bar                   |
 | `Mod + Ctrl + T`           | Toggle status text           |
 | `Mod + Ctrl + X`           | Reload colours               |
