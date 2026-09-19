@@ -1059,7 +1059,6 @@ configurerequest(XEvent *e)
 		wc.stack_mode = ev->detail;
 		XConfigureWindow(dpy, ev->window, ev->value_mask, &wc);
 	}
-	XSync(dpy, False);
 }
 
 Monitor *
@@ -2372,7 +2371,6 @@ resizeclient(Client *c, int x, int y, int w, int h)
 	updatenotchpos(c);
 	if (maximalistmode && c->twin)
 		drawnotch(c); /* redraw unconditionally — gating on width-only missed real content changes (focus/sel-state, tag moves, re-shows) that leave stale notch content behind when geometry happens to be unchanged */
-	XSync(dpy, False);
 }
 
 void

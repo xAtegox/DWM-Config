@@ -49,10 +49,10 @@ dwm is primarily operated through keyboard shortcuts. The most important control
 | `Mod + Q`             | Close focused window             |
 | `Mod + J / K`         | Navigate the window stack        |
 | `Mod + 1-9`           | Switch tags                      |
-| `Mod + Space`         | Promote focused window to master |
+| `Mod + Shift + J / K` | Push focused window in stack     |
 | `Mod + Shift + Space` | Toggle floating                  |
 | `Mod + F`             | Toggle fullscreen                |
-| `Mod + Shift + M`     | Toggle Maximalist Mode           |
+| `Mod + Ctrl + Shift + M` | Toggle Maximalist Mode        |
 | `Mod + Alt + M`       | Toggle spawn-at-max-size         |
 
 ---
@@ -74,12 +74,24 @@ The default configuration uses a master/stack arrangement with:
 
 | Keybind              | Action                           |
 | -------------------- | -------------------------------- |
-| `Mod + H`            | Decrease master area             |
-| `Mod + L`            | Increase master area             |
+| `Mod + H`            | Decrease master area / previous corner |
+| `Mod + L`            | Increase master area / next corner |
 | `Mod + Shift + I`    | Increase master window count     |
 | `Mod + Ctrl + I`     | Decrease master window count     |
-| `Mod + Space`        | Promote focused window to master |
 | `Mod + Ctrl + Space` | Focus master window              |
+
+### Floating Window Resize
+
+| Keybind               | Action                   |
+| --------------------- | ------------------------ |
+| `Mod + Ctrl + Right`  | Expand right edge outward |
+| `Mod + Ctrl + Left`   | Shrink right edge back in |
+| `Mod + Ctrl + Down`   | Expand bottom edge outward |
+| `Mod + Ctrl + Up`     | Shrink bottom edge back in |
+| `Mod + Shift + Left`  | Expand left edge outward  |
+| `Mod + Shift + Right` | Shrink left edge back in  |
+| `Mod + Shift + Up`    | Expand top edge outward   |
+| `Mod + Shift + Down`  | Shrink top edge back in   |
 
 ### Window State
 
@@ -88,6 +100,8 @@ The default configuration uses a master/stack arrangement with:
 | `Mod + F`                | Toggle fullscreen    |
 | `Mod + Shift + Space`    | Toggle floating      |
 | `Mod + Ctrl + Shift + L` | Toggle sticky window |
+| `Mod + R`                | Toggle shade (notch) |
+| `Mod + Ctrl + Shift + F` | Toggle focus-on-hover |
 
 ---
 
@@ -146,10 +160,12 @@ The default gap configuration is:
 
 It is intended to combine dwm's window management with the traditional floating desktop and DockApp workflow associated with WindowMaker.
 
-| Keybind           | Action                       |
-| ----------------- | ---------------------------- |
-| `Mod + Shift + M` | Toggle Maximalist Mode       |
-| `Mod + Alt + M`   | Toggle spawn-at-max-size     |
+| Keybind                  | Action                       |
+| ------------------------ | ---------------------------- |
+| `Mod + Ctrl + Shift + M` | Toggle Maximalist Mode       |
+| `Mod + Shift + M`        | Grow focused window          |
+| `Mod + Ctrl + M`         | Shrink focused window        |
+| `Mod + Alt + M`          | Toggle spawn-at-max-size     |
 
 When enabled, dwm launches:
 
@@ -206,21 +222,20 @@ The direct layout-switching keybinds are currently disabled in `config.h`.
 
 | Keybind                  | Application / Function      |
 | ------------------------ | --------------------------- |
-| `Mod + M`                | Custom music player         |
+| `Mod + M`                | opencode (in kitty)         |
 | `Mod + B`                | Helium browser              |
-| `Mod + D`                | Vesktop                     |
-| `Mod + E`                | Emacs client                |
-| `Mod + Shift + E`        | Large floating Emacs client |
+| `Mod + D`                | Discord (concord)           |
+| `Mod + Shift + D`        | Vesktop                     |
+| `Mod + E`                | Emacs client (large, floating) |
 | `Mod + Ctrl + E`         | Emacs Everywhere            |
-| `Mod + Shift + B`        | btop in kitty               |
-| `Mod + C`                | Calendar checker            |
+| `Mod + Shift + B`        | System stats (ptui in kitty) |
+| `Mod + C`                | Camera preview              |
 | `Mod + Shift + F`        | Nautilus                    |
 | `Mod + Shift + R`        | Screen recording            |
 | `Mod + Shift + W`        | Wallpaper picker            |
 | `Mod + Ctrl + Shift + W` | OnlyOffice                  |
 | `Mod + T`                | Toggle kitty transparency   |
 | `Mod + Shift + T`        | Toggle trackpad             |
-| `Mod + Ctrl + J`         | Camera preview              |
 | `Mod + Right Shift`      | Power menu                  |
 
 ---
@@ -396,19 +411,22 @@ Mod + Ctrl + Shift + Q
 | `Mod + Ctrl + Shift + 1-9` | Toggle window on tag         |
 | `Mod + 0`                  | View all tags                |
 | `Mod + Shift + 0`          | Move window to all tags      |
-| `Mod + H / L`              | Master area size             |
+| `Mod + H / L`              | Master area size / corner    |
 | `Mod + Shift + I`          | Increase master count        |
 | `Mod + Ctrl + I`           | Decrease master count        |
-| `Mod + Space`              | Promote to master            |
 | `Mod + Ctrl + Space`       | Focus master                 |
 | `Mod + Shift + Space`      | Toggle floating              |
 | `Mod + F`                  | Fullscreen                   |
 | `Mod + Ctrl + Shift + L`   | Sticky window                |
+| `Mod + R`                  | Toggle shade (notch)         |
+| `Mod + Ctrl + Shift + F`   | Toggle focus-on-hover        |
 | `Mod + G`                  | Decrease gaps                |
 | `Mod + Shift + G`          | Increase gaps                |
 | `Mod + [ / ]`              | Change monitor               |
 | `Mod + Shift + [ / ]`      | Move window between monitors |
-| `Mod + Shift + M`          | Maximalist Mode              |
+| `Mod + Ctrl + Shift + M`   | Maximalist Mode              |
+| `Mod + Shift + M`          | Grow focused window (maximalist) |
+| `Mod + Ctrl + M`           | Shrink focused window (maximalist) |
 | `Mod + Alt + M`            | Toggle spawn-at-max-size     |
 | `Mod + Ctrl + B`           | Toggle bar                   |
 | `Mod + Ctrl + T`           | Toggle status text           |
@@ -423,3 +441,84 @@ Mod + Ctrl + Shift + Q
 
 External files mentioned in config.h will be all placed in a folder called CONFIG
 This file will mimic my $HOME directory, for ease of acces to the files and no need to look into other dotfiles
+
+---
+
+# Dependencies
+
+## Build-time (to compile dwm)
+
+- A C compiler (`cc` / `gcc` / `clang`)
+- `make`
+- Development packages for:
+  - `libX11` — core X11 protocol (`Xlib.h`)
+  - `libXinerama` — multi-monitor support
+  - `libXft`, `fontconfig`, FreeType — font rendering
+  - `libX11-xcb`, `libxcb`, `libxcb-res` — xcb support / system trays
+- X11 headers under `/usr/X11R6/include` and `/usr/include/freetype2`
+
+## Runtime libraries
+
+- `libX11`
+- `libXinerama`
+- `libXft`
+- `libxcb`, `libxcb-res`, `libX11-xcb`
+- `fontconfig`, FreeType
+
+## Companion programs wired into config.h
+
+Core window-manager environment:
+
+- `dmenu` — application launcher
+- `kitty` — default terminal
+- `dwmblocks` — statusbar
+- `picom` — compositor
+- `dunst` — notifications
+- `pywal` (`wal`) + `xrdb` — dynamic colours
+- `feh` — wallpaper
+- `slock` — lock screen
+- `numlockx`, `xset`, `xinput`
+
+Audio / media:
+
+- `pactl` — volume, mute, mic, sink/source switching (PulseAudio / PipeWire-pulse)
+- `brightnessctl` — screen brightness
+- `mpc` + MPD — player-change watcher
+- `qmmp` — WMmp dockapp bridge
+
+Applications launched via keybinds:
+
+- `opencode`
+- `helium-browser` (also used for the Gmail bind)
+- `concord` (Discord client)
+- `vesktop`
+- `nautilus`
+- `onlyoffice-desktopeditors`
+- `ptui` (system stats, run inside kitty)
+- `emacs` + `emacsclient` (`emacs-everywhere`)
+
+Startup / desktop services:
+
+- `xdg-desktop-portal-gtk`
+- `gsettings` (GNOME dark-mode)
+
+DockApps (WindowMaker-style, spawned by `~/.config/scripts/wm-dock.sh` in Maximalist Mode):
+
+- `wmbatteries`
+- `wmcpuload`
+- `wmmemload`
+- `wmnetload`
+- `wmclockmon`
+- `wmclock`
+- `wmtz`
+- `wmweather+`
+- `wminfo`
+- `wmail`
+- `WMmp`
+
+External scripts referenced from `config.h` live in `~/.config/scripts/` (mirrored in the `CONFIG/` folder) and pull in their own tooling (screenshot/recording utilities, etc.).
+
+## Fonts
+
+- `Iosevka Nerd Font`
+- `Noto Color Emoji`
