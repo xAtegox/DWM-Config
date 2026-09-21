@@ -145,12 +145,12 @@ The default gap configuration is:
 
 # Multi-Monitor
 
-| Keybind           | Action                          |
-| ----------------- | ------------------------------- |
-| `Mod + [`         | Focus next monitor              |
-| `Mod + ]`         | Focus previous monitor          |
-| `Mod + Shift + [` | Move window to next monitor     |
-| `Mod + Shift + ]` | Move window to previous monitor |
+| Keybind               | Action                          |
+| --------------------- | ------------------------------- |
+| `Mod + Alt + H`       | Move window to previous monitor |
+| `Mod + Alt + L`       | Move window to next monitor     |
+| `Mod + Alt + J`       | Focus next monitor              |
+| `Mod + Alt + K`       | Focus previous monitor          |
 
 ---
 
@@ -422,8 +422,8 @@ Mod + Ctrl + Shift + Q
 | `Mod + Ctrl + Shift + F`   | Toggle focus-on-hover        |
 | `Mod + G`                  | Decrease gaps                |
 | `Mod + Shift + G`          | Increase gaps                |
-| `Mod + [ / ]`              | Change monitor               |
-| `Mod + Shift + [ / ]`      | Move window between monitors |
+| `Mod + Alt + H / L`    | Move window between monitors |
+| `Mod + Alt + J / K`    | Change monitor focus         |
 | `Mod + Ctrl + Shift + M`   | Maximalist Mode              |
 | `Mod + Shift + M`          | Grow focused window (maximalist) |
 | `Mod + Ctrl + M`           | Shrink focused window (maximalist) |

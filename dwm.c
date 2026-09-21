@@ -1022,11 +1022,11 @@ configurerequest(XEvent *e)
 			m = c->mon;
 			if (ev->value_mask & CWX) {
 				c->oldx = c->x;
-				c->x = m->mx + ev->x;
+				c->x = c->isdockapp ? ev->x : m->mx + ev->x;
 			}
 			if (ev->value_mask & CWY) {
 				c->oldy = c->y;
-				c->y = m->my + ev->y;
+				c->y = c->isdockapp ? ev->y : m->my + ev->y;
 			}
 			if (ev->value_mask & CWWidth) {
 				c->oldw = c->w;
@@ -1036,10 +1036,27 @@ configurerequest(XEvent *e)
 				c->oldh = c->h;
 				c->h = ev->height;
 			}
-			if ((c->x + c->w) > m->mx + m->mw && c->isfloating)
-				c->x = m->mx + (m->mw / 2 - WIDTH(c) / 2); /* center in x direction */
-			if ((c->y + c->h) > m->my + m->mh && c->isfloating)
-				c->y = m->my + (m->mh / 2 - HEIGHT(c) / 2); /* center in y direction */
+			if (c->isdockapp) {
+				/* dockapps are placed by an external script in absolute
+				 * screen coordinates; clamp to the whole desktop and let
+				 * them live on whichever monitor they land on. */
+				if (c->x < 0)
+					c->x = 0;
+				if (c->y < 0)
+					c->y = 0;
+				if ((c->x + (int)WIDTH(c)) > sw)
+					c->x = MAX(sw - (int)WIDTH(c), 0);
+				if ((c->y + (int)HEIGHT(c)) > sh)
+					c->y = MAX(sh - (int)HEIGHT(c), 0);
+				m = recttomon(c->x, c->y, c->w, c->h);
+				if (m && m != c->mon)
+					sendmon(c, m); /* reassign so tags/bars behave for the monitor it now sits on */
+			} else {
+				if ((c->x + c->w) > m->mx + m->mw && c->isfloating)
+					c->x = m->mx + (m->mw / 2 - WIDTH(c) / 2); /* center in x direction */
+				if ((c->y + c->h) > m->my + m->mh && c->isfloating)
+					c->y = m->my + (m->mh / 2 - HEIGHT(c) / 2); /* center in y direction */
+			}
 			if ((ev->value_mask & (CWX|CWY)) && !(ev->value_mask & (CWWidth|CWHeight)))
 				configure(c);
 			if (ISVISIBLE(c))
@@ -2562,6 +2579,8 @@ sendmon(Client *c, Monitor *m)
 	detachstack(c);
 	c->mon = m;
 	c->tags = m->tagset[m->seltags]; /* assign tags of target monitor */
+	if (c->issticky)
+		c->tags = TAGMASK; /* keep sticky windows (e.g. dockapps) sticky across the move */
 	attach(c);
 	attachstack(c);
 	focus(NULL);

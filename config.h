@@ -175,10 +175,10 @@ static const Key keys[] = {
     {MODKEY | ControlMask,               XK_space,        focusmaster,      {0}},                // Focus on master window
     {MODKEY | ControlMask | ShiftMask,   XK_l,            togglesticky,     {0}},                // Make window follow trough tabs
     // Multi monitor control
-    {MODKEY,                             XK_bracketright, focusmon,         {.i = -1}},          // idk
-    {MODKEY | ShiftMask,                 XK_bracketright, tagmon,           {.i = -1}},          // idk
-    {MODKEY,                             XK_bracketleft,  focusmon,         {.i = +1}},          // idk
-    {MODKEY | ShiftMask,                 XK_bracketleft,  tagmon,           {.i = +1}},          // idk
+    {MODKEY | Mod1Mask,                  XK_h,            tagmon,           {.i = -1}},          // Move window to previous monitor
+    {MODKEY | Mod1Mask,                  XK_l,            tagmon,           {.i = +1}},          // Move window to next monitor
+    {MODKEY | Mod1Mask,                  XK_j,            focusmon,         {.i = +1}},          // Focus next monitor
+    {MODKEY | Mod1Mask,                  XK_k,            focusmon,         {.i = -1}},          // Focus previous monitor
     // Vanity gaps control
     {MODKEY,                             XK_g,            incrgaps,         {.i = -3}},          // Decrerase size of gaps
     {MODKEY | ShiftMask,                 XK_g,            incrgaps,         {.i = +3}},          // Increrase size of gaps
@@ -198,6 +198,7 @@ static const Key keys[] = {
     {MODKEY | ShiftMask,               XK_b,     spawn, {.v = (const char *[]) {"kitty", "-e", "ptui", NULL}}}, // Kitty Btop Terminal
     {MODKEY | ShiftMask,               XK_f,     spawn, {.v = (const char *[]) {"nautilus", NULL}}}, // File Browser
     {MODKEY | ShiftMask,               XK_r,     spawn, {.v = (const char *[]) {HOME "/.config/scripts/audio-video/screenrecord", "toggle", NULL}}}, // Screen Recording Script
+    {MODKEY | ControlMask,               XK_r,     spawn, {.v = (const char *[]) {HOME "/.config/scripts/audio-video/screenrecord-window", NULL}}}, // Window Screen Recording
     {MODKEY | ShiftMask,               XK_w,     spawn, {.v = (const char *[]) {HOME "/.config/scripts/images-photos-wallpapers/loadouts", NULL}}}, // Custom Wallpaper Picker Script
     {MODKEY | ControlMask | ShiftMask, XK_w,     spawn, {.v = (const char *[]) {"onlyoffice-desktopeditors", NULL}}}, // OnlyOffice 
     {MODKEY,                           XK_t,     spawn, {.v = (const char *[]) {HOME "/.config/scripts/system/toggle-kitty-opacity", NULL}}}, // System Transparency Toggle
