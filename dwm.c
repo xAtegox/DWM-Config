@@ -273,6 +273,7 @@ static void manage(Window w, XWindowAttributes *wa);
 static void mappingnotify(XEvent *e);
 static void maprequest(XEvent *e);
 static void monocle(Monitor *m);
+static Monitor *monofocus(void);
 static void motionnotify(XEvent *e);
 static void movemouse(const Arg *arg);
 static Client *nexttiled(Client *c);
@@ -416,6 +417,7 @@ static Atom orderatom; /* stashes each client's position in its monitor's tiling
 static int maximalistmode = 0;
 static int spawnmax = 0; /* 1 = newly managed windows open at max size while Maximalist Mode is on */
 static int focusonhover = 1; /* if 0, enternotify() tracks which monitor the pointer is on but never steals focus by hovering a window */
+static Client *focusclient = NULL; /* the window holding X input focus, regardless of which monitor the pointer is on */
 static pid_t maximalistpid = -1;
 
 static xcb_connection_t *xcon;
@@ -886,6 +888,7 @@ buttonpress(XEvent *e)
 		XAllowEvents(dpy, ReplayPointer, CurrentTime);
 		click = ClkClientWin;
 	}
+	focusclient = selmon->sel; /* bar/client clicks pin tag actions to the clicked monitor, not whatever holds keyboard focus */
 	for (i = 0; i < LENGTH(buttons); i++)
 		if (click == buttons[i].click && buttons[i].func && buttons[i].button == ev->button
 		&& CLEANMASK(buttons[i].mask) == CLEANMASK(ev->state))
@@ -1524,6 +1527,7 @@ focus(Client *c)
 		XSetInputFocus(dpy, selmon->barwin, RevertToPointerRoot, CurrentTime);
 		XDeleteProperty(dpy, root, netatom[NetActiveWindow]);
 	}
+	focusclient = c; /* keep an authoritative pointer to the window that really has input focus */
 	selmon->sel = c; /* fullscreen is per-window/per-tag: focus changes (including tag switches) no longer drag a fullscreen state onto the newly focused client */
 	drawbars(); /* redraw statusbar */
 	drawnotches();
@@ -2129,6 +2133,13 @@ maprequest(XEvent *e)
 		return; /* gets window geom and data */
 	if (!wintoclient(ev->window)) /* if window is not already managed by dwm */
 		manage(ev->window, &wa); /* call manage to start managing it */
+}
+
+Monitor *
+monofocus(void)
+{ /* monitor of the window that actually has input focus; falls back to the
+   * pointer-selected monitor so tag keys still work on an empty desktop */
+	return focusclient ? focusclient->mon : selmon;
 }
 
 void
@@ -3054,10 +3065,12 @@ stackpos(const Arg *arg) {
 void
 tag(const Arg *arg)
 {
-	if (selmon->sel && arg->ui & TAGMASK) {
-		selmon->sel->tags = arg->ui & TAGMASK;
+	Client *c = focusclient ? focusclient : selmon->sel;
+	if (c && arg->ui & TAGMASK) {
+		c->tags = arg->ui & TAGMASK;
+		selmon = c->mon;
 		focus(NULL);
-		arrange(selmon);
+		arrange(c->mon);
 	}
 }
 
@@ -3601,26 +3614,30 @@ void
 toggletag(const Arg *arg)
 {
 	unsigned int newtags;
+	Client *c = focusclient ? focusclient : selmon->sel;
 
-	if (!selmon->sel)
+	if (!c)
 		return;
-	newtags = selmon->sel->tags ^ (arg->ui & TAGMASK);
+	newtags = c->tags ^ (arg->ui & TAGMASK);
 	if (newtags) {
-		selmon->sel->tags = newtags;
+		c->tags = newtags;
+		selmon = c->mon;
 		focus(NULL);
-		arrange(selmon);
+		arrange(c->mon);
 	}
 }
 
 void
 toggleview(const Arg *arg)
 {
-	unsigned int newtagset = selmon->tagset[selmon->seltags] ^ (arg->ui & TAGMASK);
+	Monitor *m = monofocus();
+	unsigned int newtagset = m->tagset[m->seltags] ^ (arg->ui & TAGMASK);
 
 	if (newtagset) {
-		selmon->tagset[selmon->seltags] = newtagset;
+		m->tagset[m->seltags] = newtagset;
+		selmon = m;
 		focus(NULL);
-		arrange(selmon);
+		arrange(m);
 	}
 }
 
@@ -3970,13 +3987,16 @@ updatewmhints(Client *c)
 void
 view(const Arg *arg)
 {
-	if ((arg->ui & TAGMASK) == selmon->tagset[selmon->seltags])
+	Monitor *m = monofocus();
+
+	if ((arg->ui & TAGMASK) == m->tagset[m->seltags])
 		return;
-	selmon->seltags ^= 1; /* toggle sel tagset */
+	m->seltags ^= 1; /* toggle sel tagset */
 	if (arg->ui & TAGMASK)
-		selmon->tagset[selmon->seltags] = arg->ui & TAGMASK;
+		m->tagset[m->seltags] = arg->ui & TAGMASK;
+	selmon = m;
 	focus(NULL);
-	arrange(selmon);
+	arrange(m);
 }
 
 pid_t

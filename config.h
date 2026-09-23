@@ -318,6 +318,7 @@ static const char *const maximalistcmd[] = {
  * ------------------------------------------------------------------------------*/
 static const Rule rules[] = {
     { .title = "screenkey", .isfloating = 1, .monitor = -1, .nomaximalist = 1, .nofocus = 1, .alwaysbelow = 1},
+    { .title = "Loadouts", .isfloating = 1, .monitor = -1},
     { .class = "Qmmp", .isfloating = 1, .monitor = -1, .nomaximalist = 1 },
     { .title = "Qmmp", .isfloating = 1, .monitor = -1, .nomaximalist = 1 },
     { .class = "Qmmp",       .title = "Qmmp",      .isfloating = 1, .monitor = -1, .nomaximalist = 1 },
