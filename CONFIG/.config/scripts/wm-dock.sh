@@ -155,8 +155,17 @@ echo "$APPS" |
 sleep 0.3
 
 # ==================================================
-# Start dockapps: one copy per connected monitor
+# Start dockapps: one copy on the primary monitor (screen 0)
 # ==================================================
+
+# Coordinates are saved relative to the primary monitor, so scaling
+# them against the primary is the identity — dockapps land exactly
+# where they were saved.
+MON=$(echo "$REF" | cut -d'|' -f2)
+W=$(echo "$REF" | cut -d'|' -f3)
+H=$(echo "$REF" | cut -d'|' -f4)
+OX=$(echo "$REF" | cut -d'|' -f5)
+OY=$(echo "$REF" | cut -d'|' -f6)
 
 echo "$APPS" |
   while read -r NAME INSTANCE CLASS COMMAND; do
@@ -173,22 +182,20 @@ echo "$APPS" |
     SAVED_Y=$(echo "$SAVED" | awk '{print $2}')
     SEEN=$(mktemp)
 
-    while IFS='|' read -r PRIM MON W H OX OY; do
-      start_app "$COMMAND"
+    start_app "$COMMAND"
 
-      ID=$(find_window "$INSTANCE" "$CLASS" "$SEEN")
+    ID=$(find_window "$INSTANCE" "$CLASS" "$SEEN")
 
-      if [ -n "$ID" ]; then
-        printf '%s\n' "$ID" >> "$SEEN"
+    if [ -n "$ID" ]; then
+      printf '%s\n' "$ID" >> "$SEEN"
 
-        X=$(scale_coord "$SAVED_X" "$ROX" "$RW" "$OX" "$W")
-        Y=$(scale_coord "$SAVED_Y" "$ROY" "$RH" "$OY" "$H")
+      X=$(scale_coord "$SAVED_X" "$ROX" "$RW" "$OX" "$W")
+      Y=$(scale_coord "$SAVED_Y" "$ROY" "$RH" "$OY" "$H")
 
-        position_window "$ID" "$X" "$Y"
-      else
-        echo "WARNING: Could not find $NAME on $MON"
-      fi
-    done < "$MONS"
+      position_window "$ID" "$X" "$Y"
+    else
+      echo "WARNING: Could not find $NAME on $MON"
+    fi
 
     rm -f "$SEEN"
   done

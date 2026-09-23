@@ -243,6 +243,7 @@ static void destroynotify(XEvent *e);
 static void destroynotch(Client *c);
 static void detach(Client *c);
 static void detachstack(Client *c);
+static int dockclear(Monitor *m);
 static Monitor *dirtomon(int dir);
 static void drawbar(Monitor *m);
 static void drawbars(void);
@@ -410,6 +411,7 @@ static Window root, wmcheckwin;
 static Atom tagsatom;
 static Atom viewtagatom;
 static Atom stateatom; /* stashes isfloating + geometry on each client so a restart doesn't drop it back into the tiling grid */
+static Atom monatom; /* stashes which monitor each client was on so a restart puts it back on the same screen */
 static Atom orderatom; /* stashes each client's position in its monitor's tiling order so a restart doesn't reshuffle master/stack */
 static int maximalistmode = 0;
 static int spawnmax = 0; /* 1 = newly managed windows open at max size while Maximalist Mode is on */
@@ -420,6 +422,14 @@ static xcb_connection_t *xcon;
 
 /* configuration, allows nested code to access above variables */
 #include "config.h"
+
+/* the dockapp column lives only on the primary monitor (num 0), so the right-edge
+ * clearance it reserves must only apply there — other monitors keep the full width */
+int
+dockclear(Monitor *m)
+{
+	return m->num == 0 ? dockclearance : 0;
+}
 
 /* compile-time check if all tags fit into an unsigned int bit array. */
 struct NumTags { char limitexceeded[LENGTH(tags) > 31 ? -1 : 1]; }; 
@@ -1960,6 +1970,22 @@ manage(Window w, XWindowAttributes *wa)
 		term = termforwin(c); /* tries to find a terminal for swallowing */
 		applyrules(c); /* apply any matching tag rules from config.h */
 	}
+	{ /* if this window survived a dwm restart, restore which monitor it was on */
+		Atom type;
+		int format;
+		unsigned long nitems, extra;
+		unsigned char *data = NULL;
+		if (XGetWindowProperty(dpy, w, monatom, 0, 1, False, XA_CARDINAL,
+			&type, &format, &nitems, &extra, &data) == Success && data) {
+			if (nitems) {
+				Monitor *m;
+				for (m = mons; m && m->num != *(long *)data; m = m->next);
+				if (m) /* only if that monitor still exists, else keep the fallback (selmon) */
+					c->mon = m;
+			}
+			XFree(data);
+		}
+	}
 	{ /* if this window survived a dwm restart, restore whatever tag it was on before */
 		Atom type;
 		int format;
@@ -2001,7 +2027,7 @@ manage(Window w, XWindowAttributes *wa)
 		 * spawn under/behind it. Dockapp tiles themselves are exempt —
 		 * their position is externally managed (see manage() above). */
 	{
-	int rightclear = (maximalistmode && !c->isdockapp) ? dockclearance : 0;
+	int rightclear = (maximalistmode && !c->isdockapp) ? dockclear(c->mon) : 0;
 	if (c->x + WIDTH(c) > c->mon->wx + c->mon->ww - rightclear)
 		c->x = c->mon->wx + c->mon->ww - rightclear - WIDTH(c);
 	if (c->y + HEIGHT(c) > c->mon->wy + c->mon->wh)
@@ -2024,11 +2050,11 @@ manage(Window w, XWindowAttributes *wa)
 	if (spawnmax && maximalistmode && !c->isfullscreen && !c->nomaximalist && !c->isdockapp) {
 		int maxw, maxh, topmargin;
 		topmargin = gappov + bh + 2 * (int)maximalistborderpx;
-		maxw = MAX(c->mon->ww - 2 * gappoh - dockclearance, 1);
+		maxw = MAX(c->mon->ww - 2 * gappoh - dockclear(c->mon), 1);
 		maxh = MAX(c->mon->wh - topmargin - gappov, 1);
 		c->w = maxw;
 		c->h = maxh;
-		c->x = c->mon->wx + (c->mon->ww - dockclearance - maxw) / 2;
+		c->x = c->mon->wx + (c->mon->ww - dockclear(c->mon) - maxw) / 2;
 		c->y = c->mon->wy + topmargin + (MAX(c->mon->wh - topmargin - gappov, 1) - maxh) / 2;
 	}
 
@@ -2322,6 +2348,13 @@ quit(const Arg *arg)
 				XChangeProperty(dpy, c->win, tagsatom, XA_CARDINAL, 32,
 					PropModeReplace, (unsigned char *)&data, 1);
 
+				/* also stash which monitor this window is on, so a restart
+				 * puts it back on the same screen instead of wherever the
+				 * mouse happens to be */
+				data = c->mon->num;
+				XChangeProperty(dpy, c->win, monatom, XA_CARDINAL, 32,
+					PropModeReplace, (unsigned char *)&data, 1);
+
 				/* also stash floating state + geometry, so a manually-floated
 				 * window doesn't fall back into the tiling grid on restart */
 				statedata[0] = c->isfloating;
@@ -2583,6 +2616,14 @@ sendmon(Client *c, Monitor *m)
 		c->tags = TAGMASK; /* keep sticky windows (e.g. dockapps) sticky across the move */
 	attach(c);
 	attachstack(c);
+	if (c->isfloating && !c->isfullscreen) {
+		/* the window kept its old absolute position, which can land it on the
+		 * edge (or off) the new monitor — recenter it the same way manage()
+		 * does on spawn, reserving the dock column only where it exists */
+		resize(c, m->wx + (m->ww - dockclear(m) - WIDTH(c)) / 2,
+			m->wy + (m->wh - HEIGHT(c)) / 2, c->w, c->h, 0);
+		ensurenotchroom(c);
+	}
 	focus(NULL);
 	arrange(NULL);
 }
@@ -2741,15 +2782,15 @@ movecorner(const Arg *arg)
 		y = m->wy + topmargin;
 		break;
 	case 1: /* top-right */
-		x = m->wx + m->ww - (int)WIDTH(c) - gappoh - dockclearance;
+		x = m->wx + m->ww - (int)WIDTH(c) - gappoh - dockclear(m);
 		y = m->wy + topmargin;
 		break;
 	case 2: /* right-center */
-		x = m->wx + m->ww - (int)WIDTH(c) - gappoh - dockclearance;
+		x = m->wx + m->ww - (int)WIDTH(c) - gappoh - dockclear(m);
 		y = m->wy + (m->wh - (int)HEIGHT(c)) / 2;
 		break;
 	case 3: /* bottom-right */
-		x = m->wx + m->ww - (int)WIDTH(c) - gappoh - dockclearance;
+		x = m->wx + m->ww - (int)WIDTH(c) - gappoh - dockclear(m);
 		y = m->wy + m->wh - (int)HEIGHT(c) - gappov;
 		break;
 	case 4: /* bottom-left */
@@ -2761,7 +2802,7 @@ movecorner(const Arg *arg)
 		y = m->wy + (m->wh - (int)HEIGHT(c)) / 2;
 		break;
 	default: /* 6: center */
-		x = m->wx + (m->ww - dockclearance - (int)WIDTH(c)) / 2;
+		x = m->wx + (m->ww - dockclear(m) - (int)WIDTH(c)) / 2;
 		y = m->wy + topmargin + (m->wh - topmargin - gappov - (int)HEIGHT(c)) / 2;
 		break;
 	}
@@ -2785,7 +2826,7 @@ resizemaximalist(const Arg *arg)
 	topmargin = gappov + bh + 2 * (int)maximalistborderpx;
 	factor = 1.0 + (arg->f > 0 ? maximalistresizestep : -maximalistresizestep);
 
-	maxw = m->ww - 2 * gappoh - dockclearance;
+	maxw = m->ww - 2 * gappoh - dockclear(m);
 	maxh = m->wh - topmargin - gappov;
 
 	neww = MAX((int)(c->w * factor), 1);
@@ -2794,7 +2835,7 @@ resizemaximalist(const Arg *arg)
 	newh = MIN(newh, MAX(maxh, 1));
 
 	/* re-center within the usable area (monitor minus dock column/notch margin) */
-	newx = m->wx + (m->ww - dockclearance - neww) / 2;
+	newx = m->wx + (m->ww - dockclear(m) - neww) / 2;
 	newy = m->wy + topmargin + (maxh - newh) / 2;
 
 	resize(c, newx, newy, neww, newh, 0);
@@ -2843,6 +2884,7 @@ setup(void)
 	tagsatom = XInternAtom(dpy, "_DWM_TAGS", False);
 	viewtagatom = XInternAtom(dpy, "_DWM_VIEWTAG", False);
 	stateatom = XInternAtom(dpy, "_DWM_STATE", False);
+	monatom = XInternAtom(dpy, "_DWM_MONITOR", False);
 	orderatom = XInternAtom(dpy, "_DWM_ORDER", False);
 	netatom[NetActiveWindow] = XInternAtom(dpy, "_NET_ACTIVE_WINDOW", False);
 	netatom[NetSupported] = XInternAtom(dpy, "_NET_SUPPORTED", False);
@@ -3185,7 +3227,7 @@ togglefloating(const Arg *arg)
 	if (maximalistmode && c->isfloating) { /* everything is float-forced in Maximalist Mode, so a plain float/unfloat toggle makes no sense here — use this bind as maximize/restore instead */
 		m = c->mon;
 		topmargin = (int)gappov + bh + 2 * (int)maximalistborderpx;
-		maxw = m->ww - 2 * (int)gappoh - dockclearance; /* leave the dock column clear on the right */
+		maxw = m->ww - 2 * (int)gappoh - dockclear(m); /* leave the dock column clear on the right */
 		maxh = m->wh - topmargin - (int)gappov;
 		newx = m->wx + (int)gappoh;
 		newy = m->wy + topmargin;
@@ -3275,7 +3317,7 @@ togglemaximalist(const Arg *arg)
 					/* was tiled: keeps its tiled geometry now that it's floating,
 					 * which can run under the dockapp column on the right edge.
 					 * clamp it clear of that column, shrinking/re-anchoring if needed. */
-					int maxx = m->wx + m->ww - dockclearance - gappoh;
+					int maxx = m->wx + m->ww - dockclear(m) - gappoh;
 					if (c->x + (int)WIDTH(c) > maxx) {
 						int neww = maxx - c->x;
 						int newx = c->x;
