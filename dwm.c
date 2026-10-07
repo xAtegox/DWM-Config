@@ -1268,7 +1268,7 @@ drawbar(Monitor *m) /* take a pointer to the monitor we want to draw the bar on 
 		return;
 
 	/* draw status first so it can be overdrawn by tags later */
-	if (m == selmon && selmon->showstatus) { /* status is only drawn on selected monitor */
+	if (m->showstatus) { /* status is drawn on all monitors */
 		char *text, *s, ch;
 		drw_setscheme(drw, scheme[SchemeStatus]); /* set the colorscheme used by the drawing context */
 		x = 0; /* keep track of horiz pos whil drawing */
