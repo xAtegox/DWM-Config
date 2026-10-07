@@ -359,6 +359,7 @@ Rules can control properties such as:
 - Focus behaviour
 - Fullscreen behaviour
 - Border behaviour
+- Always-on-top behaviour (`.istop` — drawn over all windows; when several have it, the newest spawn wins)
 - Maximalist Mode behaviour
 - DockApp behaviour
 

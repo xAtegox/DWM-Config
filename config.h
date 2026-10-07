@@ -315,10 +315,14 @@ static const char *const maximalistcmd[] = {
  * Mode: no forced floating, no border change, no notch, ever.
  * Add .nonotch = 1 instead if you still want the floating/border treatment
  * but never a notch on that app specifically.
+ * Add .istop = 1 to keep a window always drawn above others. If several
+ * windows have .istop, the one spawned earliest is stacked lowest and each
+ * new one lands on top, so the newest istop window always wins.
  * ------------------------------------------------------------------------------*/
 static const Rule rules[] = {
     { .title = "screenkey", .isfloating = 1, .monitor = -1, .nomaximalist = 1, .nofocus = 1, .alwaysbelow = 1},
-    { .title = "Loadouts", .isfloating = 1, .monitor = -1},
+    { .title = "Loadouts", .isfloating = 1, .monitor = 0},
+    { .title = "rmpc", .istop = 1},
     { .class = "Qmmp", .isfloating = 1, .monitor = -1, .nomaximalist = 1 },
     { .title = "Qmmp", .isfloating = 1, .monitor = -1, .nomaximalist = 1 },
     { .class = "Qmmp",       .title = "Qmmp",      .isfloating = 1, .monitor = -1, .nomaximalist = 1 },

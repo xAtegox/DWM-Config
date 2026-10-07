@@ -133,6 +133,8 @@ struct Client { /* a window that dwm is managing */
 	int nokill; /* if 1, killclient()/the notch close button won't close this client */
 	int isshaded; /* rolled up to just the notch; client window stays mapped but parked off-screen */
 	int alwaysbelow; /* if 1, never raised — always stacked behind other windows */
+	int istop; /* if 1, always raised above other windows; among istop windows the one spawned earliest is stacked lowest, so each new one lands on top */
+	unsigned long order; /* spawn order (global, monotonic) — used to break ties between istop windows: lower = spawned earlier */
 	int nofocus; /* if 1, clicking still reaches the app but dwm never treats it as focused */
 	int nofullscreen; /* if 1, this client can never be fullscreened */
 	int isdockapp; /* if 1, c->win is our own synthetic bezeled background tile, not the app's real window */
@@ -209,6 +211,7 @@ typedef struct {
 	int nokill; /* 1 = killclient()/the notch close button can never close this app */
 	int alwayssticky; /* 1 = automatically made sticky (follows across tags) as soon as it opens */
 	int alwaysbelow; /* 1 = never raised — always stacked behind other windows */
+	int istop; /* 1 = always raised above other windows; among istop windows the newest spawn wins */
 	int nofocus; /* 1 = clicking still reaches the app but dwm never treats it as focused */
 	int nofullscreen; /* 1 = this app can never be fullscreened */
 	int isdockapp; /* 1 = wrap this window in our own bezeled background tile (see manage()) */
@@ -418,6 +421,7 @@ static int maximalistmode = 0;
 static int spawnmax = 0; /* 1 = newly managed windows open at max size while Maximalist Mode is on */
 static int focusonhover = 1; /* if 0, enternotify() tracks which monitor the pointer is on but never steals focus by hovering a window */
 static Client *focusclient = NULL; /* the window holding X input focus, regardless of which monitor the pointer is on */
+static unsigned long spawnseq = 0; /* monotonically increasing counter stamped on each new client (c->order) to rank istop windows by spawn time */
 static pid_t maximalistpid = -1;
 
 static xcb_connection_t *xcon;
@@ -556,6 +560,7 @@ applyrules(Client *c)
 			c->nonotch = r->nonotch;
 			c->nokill = r->nokill;
 			c->alwaysbelow = r->alwaysbelow;
+			c->istop = r->istop;
 			c->nofullscreen = r->nofullscreen;
 			c->isdockapp = r->isdockapp;
 			if (r->nofocus) {
@@ -612,6 +617,7 @@ maybefloat(Client *c)
 			c->nonotch = r->nonotch;
 			c->nokill = r->nokill;
 			c->alwaysbelow = r->alwaysbelow;
+			c->istop = r->istop;
 			c->nofullscreen = r->nofullscreen;
 			c->isdockapp = r->isdockapp;
 			if (r->nofocus) {
@@ -1951,6 +1957,7 @@ manage(Window w, XWindowAttributes *wa)
 
 	c = ecalloc(1, sizeof(Client)); /* allocate and initialize a new Client struct to represent the window */
 	c->win = w;
+	c->order = spawnseq++; /* stamp spawn order so istop windows can rank oldest-vs-newest */
 	c->isdockapp = content != None;
 	c->dockicon = content;
 	c->pid = winpid(w); /* pid used for things like swallowing */
@@ -2570,6 +2577,28 @@ restack(Monitor *m)
 				XConfigureWindow(dpy, c->win, CWSibling|CWStackMode, &wc);
 				wc.sibling = c->win;
 			}
+	}
+	/* .istop windows are always drawn above everything else. When several of
+	 * them exist, the one spawned earliest is stacked lowest and each newer
+	 * one lands on top of it, so a new istop window always wins. Raised last
+	 * here so they sit above the focused window too. */
+	{
+		Client *top[64], *tmp;
+		int n = 0, i, j;
+		for (c = m->clients; c; c = c->next)
+			if (c->istop && ISVISIBLE(c) && n < (int)LENGTH(top))
+				top[n++] = c;
+		for (i = 1; i < n; i++) { /* insertion sort ascending by spawn order */
+			tmp = top[i];
+			for (j = i; j > 0 && top[j - 1]->order > tmp->order; j--)
+				top[j] = top[j - 1];
+			top[j] = tmp;
+		}
+		for (i = 0; i < n; i++) {
+			XRaiseWindow(dpy, top[i]->win);
+			if (top[i]->twin)
+				XRaiseWindow(dpy, top[i]->twin);
+		}
 	}
 	XSync(dpy, False);
 	while (XCheckMaskEvent(dpy, EnterWindowMask, &ev));
